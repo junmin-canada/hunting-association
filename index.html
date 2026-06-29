@@ -172,6 +172,7 @@
       .landing-box { padding: 24px 16px; }
       .landing-box h1 { font-size: 18px; }
       .landing-box .subtitle { white-space: normal; font-size: 12px; }
+      .landing-btn { white-space: normal !important; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px !important; padding: 12px 10px !important; line-height: 1.4; box-sizing: border-box; }
       .section { padding: 16px 12px; }
       .section-title { font-size: 14px; margin-bottom: 14px; }
       .reg-header { padding: 16px 12px; }
@@ -2113,10 +2114,16 @@
       console.warn('Firebase initialization failed:', e);
     }
 
+    function firestoreTimeout(promise, ms) {
+      return Promise.race([promise, new Promise(function(_, reject) {
+        setTimeout(function() { reject(new Error('Firebase timeout')); }, ms || 5000);
+      })]);
+    }
+
     async function firestoreAddRegistration(data) {
       if (!firebaseReady || !firestoreDb) return;
       try {
-        await firestoreDb.collection('registrations').doc(data.member_id).set({
+        await firestoreTimeout(firestoreDb.collection('registrations').doc(data.member_id).set({
           member_id: data.member_id,
           name: data.name || '',
           last_name: data.last_name || '',
@@ -2136,22 +2143,22 @@
           restricted_license_issue_date: data.restricted_license_issue_date || '',
           status: 'pending',
           submittedAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        }));
         console.log('Registration synced to Firebase:', data.member_id);
       } catch(e) {
-        console.error('Firebase write failed:', e);
+        console.warn('Firebase write skipped (timeout or error):', e.message);
       }
     }
 
     async function firestoreUpdateStatus(memberId, status) {
       if (!firebaseReady || !firestoreDb) return;
       try {
-        await firestoreDb.collection('registrations').doc(memberId).update({
+        await firestoreTimeout(firestoreDb.collection('registrations').doc(memberId).update({
           status: status,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        }));
       } catch(e) {
-        console.error('Firebase status update failed:', e);
+        console.warn('Firebase status update skipped:', e.message);
       }
     }
 
@@ -2160,7 +2167,7 @@
       var indicator = document.getElementById('syncIndicator');
       if (indicator) { indicator.textContent = '🔄 同步中...'; indicator.style.color = '#e67e22'; }
       try {
-        var snapshot = await firestoreDb.collection('registrations').where('status', '==', 'pending').get();
+        var snapshot = await firestoreTimeout(firestoreDb.collection('registrations').where('status', '==', 'pending').get(), 8000);
         var allMembers = await dbGetAll('members');
         var existingIds = new Set(allMembers.map(function(m) { return m.member_id; }));
         var newCount = 0;
