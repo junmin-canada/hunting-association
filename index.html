@@ -3081,6 +3081,17 @@
 
     let memberFilter = '';
     let memberSort = { field: '', dir: 'asc' };
+    var _dismissedExpiredIds = {};
+
+    async function dismissExpiredBanner() {
+      var allMembers = await dbGetAll('members');
+      var t = today();
+      allMembers.filter(m => m.status === 'active' && getMemberStatus(m) === 'expired').forEach(function(m) {
+        _dismissedExpiredIds[m.id] = true;
+      });
+      var el = document.getElementById('expiredBanner');
+      if (el) el.remove();
+    }
 
     function setMemberSort(field) {
       if (memberSort.field === field) {
@@ -3187,13 +3198,16 @@
       const expiredNow = allActive.filter(m => getMemberStatus(m) === 'expired');
       let bannerHtml = '';
       if (expiredNow.length > 0) {
-        bannerHtml += `<div class="renewal-banner expired-banner">⚠️ <strong>${expiredNow.length} 位会员已过期：</strong>${expiredNow.map(m => fullName(m)).join('、')}</div>`;
+        const hasNew = expiredNow.some(m => !_dismissedExpiredIds[m.id]);
+        if (hasNew) {
+          bannerHtml += `<div class="renewal-banner expired-banner" id="expiredBanner">\u26A0\uFE0F <strong>${expiredNow.length} \u4F4D\u4F1A\u5458\u5DF2\u8FC7\u671F\uFF1A</strong>${expiredNow.map(m => fullName(m)).join('\u3001')} <button class="btn btn-outline" style="margin-left:auto;padding:4px 14px;font-size:12px;white-space:nowrap;" onclick="dismissExpiredBanner()">\u77E5\u9053\u4E86</button></div>`;
+        }
       }
       if (expiringNow.length > 0) {
-        bannerHtml += `<div class="renewal-banner">⏰ <strong>${expiringNow.length} 位会员即将到期（一周内）：</strong>${expiringNow.map(m => {
+        bannerHtml += `<div class="renewal-banner">\u23F0 <strong>${expiringNow.length} \u4F4D\u4F1A\u5458\u5373\u5C06\u5230\u671F\uFF08\u4E00\u5468\u5185\uFF09\uFF1A</strong>${expiringNow.map(m => {
           const days = daysBetween(t, addYears(m.renewal_date, 1));
-          return `${fullName(m)}（剩余${days}天）`;
-        }).join('、')}</div>`;
+          return `${fullName(m)}\uFF08\u5269\u4F59${days}\u5929\uFF09`;
+        }).join('\u3001')}</div>`;
       }
       document.getElementById('renewalBanners').innerHTML = bannerHtml;
 
@@ -3530,6 +3544,21 @@
       const allMembers = await dbGetAll('members');
       const deleted = allMembers.filter(m => m.status === 'deleted');
       const container = document.getElementById('memberDeletedList');
+
+      // Attach event delegation once
+      if (!container._delegated) {
+        container._delegated = true;
+        container.addEventListener('click', function(e) {
+          var btn = e.target.closest('button[data-action]');
+          if (!btn) return;
+          var action = btn.getAttribute('data-action');
+          var id = parseInt(btn.getAttribute('data-id'), 10);
+          console.log('Deleted tab button clicked:', action, id);
+          if (action === 'restore') restoreDeletedMember(id);
+          else if (action === 'permdelete') permanentDeleteFromDeleted(id);
+        });
+      }
+
       if (deleted.length === 0) {
         container.innerHTML = '<p style=”text-align:center;padding:40px;color:#999;”>\u6682\u65E0\u5DF2\u5220\u9664\u4F1A\u5458</p>';
         return;
@@ -3537,6 +3566,7 @@
       container.style.padding = '0 20px 20px';
       deleted.sort(function(a,b){ return (b.deleted_at||'').localeCompare(a.deleted_at||''); });
       container.innerHTML = deleted.map(function(m) {
+        console.log('Rendering deleted member:', m.id, fullName(m));
         const photoHtml = m.photo
           ? '<img src=”' + m.photo + '” class=”approval-photo” alt=”\u7167\u7247”>'
           : '<div class=”approval-photo-placeholder”>\uD83D\uDC64</div>';
@@ -3586,41 +3616,47 @@
           + licHtml
           + '</div>'
           + '<div class=”approval-actions”>'
-          + '<button class=”btn btn-success” onclick=”restoreDeletedMember(' + m.id + ')”>\u2705 \u6062\u590D\u4F1A\u5458</button>'
-          + '<button class=”btn btn-danger” onclick=”permanentDeleteFromDeleted(' + m.id + ')”>\u274C \u5F7B\u5E95\u5220\u9664</button>'
+          + '<button class=”btn btn-success” data-action=”restore” data-id=”' + m.id + '”>\u2705 \u6062\u590D\u4F1A\u5458</button>'
+          + '<button class=”btn btn-danger” data-action=”permdelete” data-id=”' + m.id + '”>\u274C \u5F7B\u5E95\u5220\u9664</button>'
           + '</div></div>';
       }).join('');
     }
 
     async function restoreDeletedMember(id) {
-      const m = await dbGet('members', id);
-      if (!m) return;
-      showConfirm('恢复会员', '确定恢复 ' + fullName(m) + ' 的会员身份吗？', '♻️', async function() {
-        m.status = 'active';
-        delete m.deleted_at;
-        m.updated_at = new Date().toISOString();
-        await dbPut('members', m);
-        await logAction('恢复已删除会员：' + fullName(m));
-        showToast('已恢复 ' + fullName(m) + ' 的会员身份', 'success');
-        renderDeletedMembers();
-        refreshDashboard();
-      });
+      try {
+        console.log('restoreDeletedMember called with id:', id, typeof id);
+        const m = await dbGet('members', id);
+        if (!m) { console.log('Member not found for id:', id); showToast('\u4F1A\u5458\u4E0D\u5B58\u5728', 'error'); return; }
+        showConfirm('\u6062\u590D\u4F1A\u5458', '\u786E\u5B9A\u6062\u590D ' + fullName(m) + ' \u7684\u4F1A\u5458\u8EAB\u4EFD\u5417\uFF1F', '\u267B\uFE0F', async function() {
+          m.status = 'active';
+          delete m.deleted_at;
+          m.updated_at = new Date().toISOString();
+          await dbPut('members', m);
+          await logAction('\u6062\u590D\u5DF2\u5220\u9664\u4F1A\u5458\uFF1A' + fullName(m));
+          showToast('\u5DF2\u6062\u590D ' + fullName(m) + ' \u7684\u4F1A\u5458\u8EAB\u4EFD', 'success');
+          renderDeletedMembers();
+          refreshDashboard();
+        });
+      } catch(e) { console.error('restoreDeletedMember error:', e); showToast('\u64CD\u4F5C\u5931\u8D25: ' + e.message, 'error'); }
     }
 
     async function permanentDeleteFromDeleted(id) {
-      const m = await dbGet('members', id);
-      if (!m) return;
-      showConfirm('彻底删除', '确定彻底删除 ' + fullName(m) + ' 的记录吗？此操作不可撤销。', '⚠️', async function() {
-        await dbDelete('members', id);
-        const reminders = await dbGetAll('reminders');
-        for (const r of reminders.filter(r => r.memberDbId === id)) {
-          await dbDelete('reminders', r.id);
-        }
-        await logAction('彻底删除会员：' + fullName(m));
-        showToast('已彻底删除 ' + fullName(m), 'info');
-        renderDeletedMembers();
-        refreshDashboard();
-      });
+      try {
+        console.log('permanentDeleteFromDeleted called with id:', id, typeof id);
+        const m = await dbGet('members', id);
+        if (!m) { console.log('Member not found for id:', id); showToast('\u4F1A\u5458\u4E0D\u5B58\u5728', 'error'); return; }
+        showConfirm('\u5F7B\u5E95\u5220\u9664', '\u786E\u5B9A\u5F7B\u5E95\u5220\u9664 ' + fullName(m) + ' \u7684\u8BB0\u5F55\u5417\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u64A4\u9500\u3002', '\u26A0\uFE0F', async function() {
+          await dbDelete('members', id);
+          const reminders = await dbGetAll('reminders');
+          for (const r of reminders.filter(r => r.memberDbId === id)) {
+            await dbDelete('reminders', r.id);
+          }
+          await logAction('\u5F7B\u5E95\u5220\u9664\u4F1A\u5458\uFF1A' + fullName(m));
+          showToast('\u5DF2\u5F7B\u5E95\u5220\u9664 ' + fullName(m), 'info');
+          renderDeletedMembers();
+          refreshDashboard();
+        });
+      } catch(e) { console.error('permanentDeleteFromDeleted error:', e); showToast('\u64CD\u4F5C\u5931\u8D25: ' + e.message, 'error'); }
     }
 
     // ═══════════════════════════════════════════════════════════
