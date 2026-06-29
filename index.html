@@ -1382,7 +1382,7 @@
           <button class="btn btn-outline" onclick="setMemberFilter('expiring')" id="mFilterExpiring">即将到期</button>
           <button class="btn btn-outline" onclick="setMemberFilter('expired')" id="mFilterExpired">已过期</button>
           <div style="flex:1;"></div>
-          <input type="text" id="memberSearch" placeholder="🔍 搜索会员（编号/姓名/国籍）" oninput="renderMembers()" style="width:280px;padding:8px 14px;border:2px solid var(--border);border-radius:8px;font-size:13px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+          <input type="text" id="memberSearch" placeholder="🔍 搜索会员（任意信息）" oninput="renderMembers()" style="width:280px;padding:8px 14px;border:2px solid var(--border);border-radius:8px;font-size:13px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
         </div>
         <div class="table-container">
           <div style="overflow-x:auto;">
@@ -2841,6 +2841,17 @@
       const member = await dbGet('members', memberDbId);
       if (!member) return;
 
+      // Skip if membership has expired (no need for license reminders)
+      if (member.renewal_date && addYears(member.renewal_date, 1) <= today()) {
+        const existingPending = (await dbGetAll('reminders')).filter(r =>
+          r.memberDbId === memberDbId && r.status === 'pending'
+        );
+        for (const old of existingPending) {
+          await dbDelete('reminders', old.id);
+        }
+        return;
+      }
+
       const reminders = await dbGetAll('reminders');
 
       const licenseTypes = [
@@ -3029,9 +3040,10 @@
       });
 
       const deletedIds = new Set(allMembers.filter(m => m.status === 'deleted').map(m => m.id));
-      const allDueReminders = reminders.filter(r => r.reminderDate <= t && !deletedIds.has(r.memberDbId));
+      const expiredMemberIds = new Set(allMembers.filter(m => m.renewal_date && addYears(m.renewal_date, 1) <= t).map(m => m.id));
+      const allDueReminders = reminders.filter(r => r.reminderDate <= t && !deletedIds.has(r.memberDbId) && !expiredMemberIds.has(r.memberDbId));
       const gunDueMemberCount = new Set(allDueReminders.map(r => r.memberDbId)).size;
-      const dueReminders = reminders.filter(r => r.status === 'pending' && r.reminderDate <= t && !deletedIds.has(r.memberDbId));
+      const dueReminders = reminders.filter(r => r.status === 'pending' && r.reminderDate <= t && !deletedIds.has(r.memberDbId) && !expiredMemberIds.has(r.memberDbId));
       const dueNow = dueReminders.length;
 
       document.getElementById('statMembers').textContent = activeMembers.length;
@@ -3122,12 +3134,20 @@
       const q = searchEl ? searchEl.value.trim().toLowerCase() : '';
       if (q) {
         members = members.filter(m => {
-          const name = fullName(m).toLowerCase();
-          const mid = (m.member_id || '').toLowerCase();
-          const phone = (m.phone || '').toLowerCase();
-          const nat = (m.nationality || '').toLowerCase();
-          const email = (m.email || '').toLowerCase();
-          return name.includes(q) || mid.includes(q) || phone.includes(q) || nat.includes(q) || email.includes(q);
+          var fields = [
+            fullName(m), m.member_id, m.phone, m.email,
+            m.nationality, m.gender, m.identity, m.document_number,
+            m.last_name, m.first_name, m.name,
+            m.hunting_license_number, m.non_restricted_license_number, m.restricted_license_number,
+            m.join_date, m.renewal_date,
+            m.hunting_license_issue_date, m.non_restricted_license_issue_date, m.restricted_license_issue_date
+          ];
+          var haystack = fields.map(function(f){ return (f || '').toLowerCase(); }).join(' ');
+          var st = getMemberStatus(m);
+          if (st === 'active') haystack += ' ' + '\u6b63\u5e38';
+          else if (st === 'expiring') haystack += ' ' + '\u5373\u5c06\u5230\u671f';
+          else if (st === 'expired') haystack += ' ' + '\u5df2\u8fc7\u671f';
+          return haystack.includes(q);
         });
       }
 
@@ -3511,41 +3531,40 @@
       const deleted = allMembers.filter(m => m.status === 'deleted');
       const container = document.getElementById('memberDeletedList');
       if (deleted.length === 0) {
-        container.innerHTML = '<p style=”text-align:center;padding:40px;color:#999;”>暂无已删除会员</p>';
+        container.innerHTML = '<p style=”text-align:center;padding:40px;color:#999;”>\u6682\u65E0\u5DF2\u5220\u9664\u4F1A\u5458</p>';
         return;
       }
       container.style.padding = '0 20px 20px';
       deleted.sort(function(a,b){ return (b.deleted_at||'').localeCompare(a.deleted_at||''); });
       container.innerHTML = deleted.map(function(m) {
         const photoHtml = m.photo
-          ? '<img src=”' + m.photo + '” class=”approval-photo” alt=”照片”>'
-          : '<div class=”approval-photo-placeholder”>👤</div>';
+          ? '<img src=”' + m.photo + '” class=”approval-photo” alt=”\u7167\u7247”>'
+          : '<div class=”approval-photo-placeholder”>\uD83D\uDC64</div>';
         const deletedTime = m.deleted_at ? m.deleted_at.substring(0,10) : '-';
-        const joinYears = m.join_date ? Math.floor((new Date() - new Date(m.join_date)) / (365.25*24*60*60*1000)) + '年' : '-';
 
         let licHtml = '';
         if (m.hunting_license_number || m.hunting_license_issue_date) {
           licHtml += '<div style=”background:#f9f9f9;border-radius:6px;padding:8px 12px;margin-top:8px;”>';
-          licHtml += '<span style=”font-size:12px;font-weight:600;color:var(--primary);”>🎯 猎牌</span>';
+          licHtml += '<span style=”font-size:12px;font-weight:600;color:var(--primary);”>\uD83C\uDFAF \u730E\u724C</span>';
           licHtml += '<div class=”info-grid” style=”margin-top:4px;”>';
-          licHtml += '<span>号码：' + esc(m.hunting_license_number||'-') + '</span>';
-          licHtml += '<span>发放时间：' + (m.hunting_license_issue_date||'-') + '</span>';
+          licHtml += '<span>\u53F7\u7801\uFF1A' + esc(m.hunting_license_number||'-') + '</span>';
+          licHtml += '<span>\u53D1\u653E\u65F6\u95F4\uFF1A' + (m.hunting_license_issue_date||'-') + '</span>';
           licHtml += '</div></div>';
         }
         if (m.non_restricted_license_number || m.non_restricted_license_issue_date) {
           licHtml += '<div style=”background:#f9f9f9;border-radius:6px;padding:8px 12px;margin-top:6px;”>';
-          licHtml += '<span style=”font-size:12px;font-weight:600;color:var(--primary);”>🔫 非限制性枪械牌照</span>';
+          licHtml += '<span style=”font-size:12px;font-weight:600;color:var(--primary);”>\uD83D\uDD2B \u975E\u9650\u5236\u6027\u67AA\u68B0\u724C\u7167</span>';
           licHtml += '<div class=”info-grid” style=”margin-top:4px;”>';
-          licHtml += '<span>号码：' + esc(m.non_restricted_license_number||'-') + '</span>';
-          licHtml += '<span>发放时间：' + (m.non_restricted_license_issue_date||'-') + '</span>';
+          licHtml += '<span>\u53F7\u7801\uFF1A' + esc(m.non_restricted_license_number||'-') + '</span>';
+          licHtml += '<span>\u53D1\u653E\u65F6\u95F4\uFF1A' + (m.non_restricted_license_issue_date||'-') + '</span>';
           licHtml += '</div></div>';
         }
         if (m.restricted_license_number || m.restricted_license_issue_date) {
           licHtml += '<div style=”background:#f9f9f9;border-radius:6px;padding:8px 12px;margin-top:6px;”>';
-          licHtml += '<span style=”font-size:12px;font-weight:600;color:var(--primary);”>🛡️ 限制性枪械牌照</span>';
+          licHtml += '<span style=”font-size:12px;font-weight:600;color:var(--primary);”>\uD83D\uDEE1\uFE0F \u9650\u5236\u6027\u67AA\u68B0\u724C\u7167</span>';
           licHtml += '<div class=”info-grid” style=”margin-top:4px;”>';
-          licHtml += '<span>号码：' + esc(m.restricted_license_number||'-') + '</span>';
-          licHtml += '<span>发放时间：' + (m.restricted_license_issue_date||'-') + '</span>';
+          licHtml += '<span>\u53F7\u7801\uFF1A' + esc(m.restricted_license_number||'-') + '</span>';
+          licHtml += '<span>\u53D1\u653E\u65F6\u95F4\uFF1A' + (m.restricted_license_issue_date||'-') + '</span>';
           licHtml += '</div></div>';
         }
 
@@ -3554,21 +3573,21 @@
           + '<div class=”approval-info”>'
           + '<h4>' + esc(fullName(m)) + ' <span style=”font-size:12px;color:#999;font-weight:normal;”>' + esc(m.member_id) + '</span></h4>'
           + '<div class=”info-grid”>'
-          + '<span>性别：' + esc(m.gender||'-') + '</span>'
-          + '<span>国籍：' + esc(m.nationality||'-') + '</span>'
-          + '<span>身份：' + esc(m.identity||'-') + '</span>'
-          + '<span>证件号：' + esc(m.document_number||'-') + '</span>'
-          + '<span>电话：' + esc(m.phone||'-') + '</span>'
-          + '<span>邮箱：' + esc(m.email||'-') + '</span>'
-          + '<span>入会：' + (m.join_date||'-') + ' (' + joinYears + ')</span>'
-          + '<span>续费：' + (m.renewal_date||'-') + '</span>'
-          + '<span>删除时间：' + deletedTime + '</span>'
+          + '<span>\u6027\u522B\uFF1A' + esc(m.gender||'-') + '</span>'
+          + '<span>\u56FD\u7C4D\uFF1A' + esc(m.nationality||'-') + '</span>'
+          + '<span>\u8EAB\u4EFD\uFF1A' + esc(m.identity||'-') + '</span>'
+          + '<span>\u8BC1\u4EF6\u53F7\uFF1A' + esc(m.document_number||'-') + '</span>'
+          + '<span>\u7535\u8BDD\uFF1A' + esc(m.phone||'-') + '</span>'
+          + '<span>\u90AE\u7BB1\uFF1A' + esc(m.email||'-') + '</span>'
+          + '<span>\u5165\u4F1A\uFF1A' + (m.join_date||'-') + '</span>'
+          + '<span>\u7EED\u8D39\uFF1A' + (m.renewal_date||'-') + '</span>'
+          + '<span>\u5220\u9664\u65F6\u95F4\uFF1A' + deletedTime + '</span>'
           + '</div>'
           + licHtml
           + '</div>'
           + '<div class=”approval-actions”>'
-          + '<button class=”btn btn-success” onclick=”restoreDeletedMember(' + m.id + ')”>✅ 恢复会员</button>'
-          + '<button class=”btn btn-danger” onclick=”permanentDeleteFromDeleted(' + m.id + ')”>❌ 彻底删除</button>'
+          + '<button class=”btn btn-success” onclick=”restoreDeletedMember(' + m.id + ')”>\u2705 \u6062\u590D\u4F1A\u5458</button>'
+          + '<button class=”btn btn-danger” onclick=”permanentDeleteFromDeleted(' + m.id + ')”>\u274C \u5F7B\u5E95\u5220\u9664</button>'
           + '</div></div>';
       }).join('');
     }
@@ -4046,8 +4065,12 @@
       const deletedIds = new Set(members.filter(m => m.status === 'deleted').map(m => m.id));
       reminders = reminders.filter(r => !deletedIds.has(r.memberDbId));
 
-      // Only show reminders that are due (reminderDate <= today)
+      // Exclude pending reminders for expired members (membership not renewed)
       const t = today();
+      const expiredMemberIds = new Set(members.filter(m => m.renewal_date && addYears(m.renewal_date, 1) <= t).map(m => m.id));
+      reminders = reminders.filter(r => !(r.status === 'pending' && expiredMemberIds.has(r.memberDbId)));
+
+      // Only show reminders that are due (reminderDate <= today)
       reminders = reminders.filter(r => r.reminderDate <= t);
 
       if (currentFilter) {
@@ -4077,7 +4100,7 @@
             <td>${esc(r.licenseName)}</td>
             <td>${r.issueDate}</td>
             <td>${r.expiryDate}</td>
-            <td>${r.reminderDate} ${isDue ? '<span style="color:var(--danger);font-weight:bold;">(待提醒)</span>' : ''}</td>
+            <td>${r.reminderDate} ${isDue ? (r.expiryDate <= t ? '<span style="color:var(--danger);font-weight:bold;">(\u5df2\u8fc7\u671f)</span>' : '<span style="color:var(--danger);font-weight:bold;">(\u5f85\u63d0\u9192)</span>') : ''}</td>
             <td><span class="status-badge status-${r.status}">${r.status === 'pending' ? '待处理' : '已发送'}</span></td>
             <td>
               ${r.status === 'pending'
@@ -4090,7 +4113,7 @@
 
       // Update badge
       const allReminders = await dbGetAll('reminders');
-      const dueNow = allReminders.filter(r => r.status === 'pending' && r.reminderDate <= t).length;
+      const dueNow = allReminders.filter(r => r.status === 'pending' && r.reminderDate <= t && !expiredMemberIds.has(r.memberDbId)).length;
       const badge = document.getElementById('reminderBadge');
       if (dueNow > 0) { badge.textContent = dueNow; badge.style.display = 'inline'; }
       else { badge.style.display = 'none'; }
@@ -4182,7 +4205,8 @@
       const members = await dbGetAll('members');
       const t = today();
       const deletedIds = new Set(members.filter(m => m.status === 'deleted').map(m => m.id));
-      const dueReminders = reminders.filter(r => r.status === 'pending' && r.reminderDate <= t && !deletedIds.has(r.memberDbId));
+      const expiredMemberIds = new Set(members.filter(m => m.renewal_date && addYears(m.renewal_date, 1) <= t).map(m => m.id));
+      const dueReminders = reminders.filter(r => r.status === 'pending' && r.reminderDate <= t && !deletedIds.has(r.memberDbId) && !expiredMemberIds.has(r.memberDbId));
 
       if (dueReminders.length === 0) {
         showToast('当前没有到期的提醒需要处理', 'info');
@@ -4218,7 +4242,8 @@
       const members = await dbGetAll('members');
       const t = today();
       const deletedIds = new Set(members.filter(m => m.status === 'deleted').map(m => m.id));
-      const dueReminders = reminders.filter(r => r.status === 'pending' && r.reminderDate <= t && !deletedIds.has(r.memberDbId));
+      const expiredMemberIds = new Set(members.filter(m => m.renewal_date && addYears(m.renewal_date, 1) <= t).map(m => m.id));
+      const dueReminders = reminders.filter(r => r.status === 'pending' && r.reminderDate <= t && !deletedIds.has(r.memberDbId) && !expiredMemberIds.has(r.memberDbId));
 
       if (dueReminders.length === 0) {
         showToast('当前没有到期的提醒需要处理', 'info');
