@@ -548,6 +548,7 @@
     .toast.success .toast-btn { background: var(--success); }
     .toast.error .toast-btn { background: var(--danger); }
     .toast.info .toast-btn { background: #2980b9; }
+    .toast.warning .toast-btn { background: var(--warning); }
 
     .email-preview {
       background: #f9f9f9;
@@ -606,7 +607,7 @@
       align-items: flex-start;
     }
 
-    .approval-card .approval-photo {
+    .approval-photo {
       width: 70px;
       height: 88px;
       border-radius: 6px;
@@ -615,7 +616,7 @@
       flex-shrink: 0;
     }
 
-    .approval-card .approval-photo-placeholder {
+    .approval-photo-placeholder {
       width: 70px;
       height: 88px;
       border-radius: 6px;
@@ -629,18 +630,18 @@
       flex-shrink: 0;
     }
 
-    .approval-card .approval-info {
+    .approval-info {
       flex: 1;
       min-width: 0;
     }
 
-    .approval-card .approval-info h4 {
+    .approval-info h4 {
       font-size: 16px;
       color: var(--text);
       margin-bottom: 8px;
     }
 
-    .approval-card .approval-info .info-grid {
+    .info-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 4px 16px;
@@ -648,71 +649,16 @@
       color: var(--text-light);
     }
 
-    .approval-card .approval-actions {
+    .approval-actions {
       display: flex;
       flex-direction: column;
       gap: 8px;
       flex-shrink: 0;
     }
 
-    .deleted-card {
-      background: #fff;
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 14px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-      border-left: 4px solid var(--danger);
-      display: flex;
-      gap: 20px;
-      align-items: flex-start;
-    }
-    .deleted-card .del-photo {
-      width: 64px; height: 80px; border-radius: 8px; object-fit: cover;
-      border: 2px solid #e0e0e0; flex-shrink: 0; opacity: 0.7;
-    }
-    .deleted-card .del-photo-placeholder {
-      width: 64px; height: 80px; border-radius: 8px; border: 2px solid #e0e0e0;
-      background: #f5f5f5; display: flex; align-items: center; justify-content: center;
-      font-size: 24px; color: #ccc; flex-shrink: 0;
-    }
-    .deleted-card .del-info { flex: 1; min-width: 0; }
-    .deleted-card .del-info h4 {
-      margin: 0 0 10px; font-size: 16px; color: var(--text);
-      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    }
-    .deleted-card .del-info h4 .del-id {
-      font-size: 12px; color: #aaa; font-weight: normal;
-    }
-    .deleted-card .del-info h4 .del-badge {
-      font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 10px;
-      background: #fde8e8; color: var(--danger); white-space: nowrap;
-    }
-    .deleted-card .del-info .del-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px;
-      font-size: 13px; color: #666;
-    }
-    .deleted-card .del-info .del-grid span { padding: 2px 0; }
-    .deleted-card .del-lic {
-      background: #f8f8f8; border-radius: 8px; padding: 10px 14px; margin-top: 10px;
-    }
-    .deleted-card .del-lic-title {
-      font-size: 12px; font-weight: 600; color: #888; margin-bottom: 6px;
-    }
-    .deleted-card .del-lic-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px;
-      font-size: 12px; color: #999;
-    }
-    .deleted-card .del-actions {
-      display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; min-width: 120px;
-    }
-    .deleted-card .del-actions .btn { width: 100%; text-align: center; font-size: 13px; padding: 8px 12px; }
-
     @media (max-width: 600px) {
-      .deleted-card { flex-direction: column; }
-      .deleted-card .del-actions { flex-direction: row; min-width: auto; }
-      .deleted-card .del-actions .btn { width: auto; }
       .approval-card { flex-direction: column; }
-      .approval-card .approval-actions { flex-direction: row; }
+      .approval-actions { flex-direction: row; }
     }
 
     /* ─── Renewal reminder banner ──────────────────── */
@@ -860,7 +806,7 @@
       <button class="landing-btn primary" onclick="showRegister()">📝 会员信息登记</button>
       <button class="landing-btn primary" onclick="showRegisterEn()">📝 Member Registration</button>
       <button class="landing-btn primary" onclick="showRegisterFr()">📝 Inscription en français</button>
-      <button class="landing-btn secondary" onclick="showMemberQuery()" style="white-space:nowrap;font-size:14px;">🔍 会员之家 / Member Home / Maison des membres</button>
+      <button class="landing-btn secondary" onclick="showMemberQuery()" style="font-size:14px;line-height:1.6;">🔍 会员之家<br><span style="font-size:12px;">Member Home / Maison des membres</span></button>
       <button class="landing-btn secondary" onclick="showAdmin()">🔐 管理员登录</button>
       <p style="color: #bbb; font-size: 12px; margin-top: 20px;">系统版本 1.0 &copy; 2026</p>
     </div>
@@ -1917,26 +1863,6 @@
     </div>
   </div>
 
-  <!-- Restore Member Confirmation Modal -->
-  <div class="modal-overlay" id="restoreConfirmModal">
-    <div class="modal" style="width:400px;">
-      <div class="modal-header">
-        <h3>恢复会员</h3>
-        <button class="modal-close" onclick="closeModal('restoreConfirmModal')">&times;</button>
-      </div>
-      <div class="modal-body" style="text-align:center;">
-        <div style="font-size:48px;margin-bottom:12px;">♻️</div>
-        <p style="font-size:16px;margin-bottom:8px;">确定要恢复会员</p>
-        <p id="restoreMemberName" style="font-weight:600;font-size:18px;color:var(--text);margin-bottom:16px;"></p>
-        <p style="color:var(--text-light);font-size:13px;">恢复后该会员将重新变为活跃状态。</p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" onclick="closeModal('restoreConfirmModal')">取消</button>
-        <button class="btn btn-success" onclick="confirmRestoreDeleted()">确认恢复</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Delete Member Confirmation Modal -->
   <div class="modal-overlay" id="deleteMemberConfirmModal">
     <div class="modal" style="width:400px;">
@@ -1953,26 +1879,6 @@
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('deleteMemberConfirmModal')">取消</button>
         <button class="btn btn-danger" onclick="confirmDeleteMember()">确认删除</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Permanent Delete Confirmation Modal -->
-  <div class="modal-overlay" id="permDeleteConfirmModal">
-    <div class="modal" style="width:400px;">
-      <div class="modal-header">
-        <h3 style="color:var(--danger);">彻底删除</h3>
-        <button class="modal-close" onclick="closeModal('permDeleteConfirmModal')">&times;</button>
-      </div>
-      <div class="modal-body" style="text-align:center;">
-        <div style="font-size:48px;margin-bottom:12px;">⚠️</div>
-        <p style="font-size:16px;margin-bottom:8px;">确定要彻底删除会员</p>
-        <p id="permDeleteMemberName" style="font-weight:600;font-size:18px;color:var(--danger);margin-bottom:16px;"></p>
-        <p style="color:var(--danger);font-size:13px;">此操作不可撤销，所有相关提醒记录也将一并删除！</p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" onclick="closeModal('permDeleteConfirmModal')">取消</button>
-        <button class="btn btn-danger" onclick="confirmPermDelete()">确认删除</button>
       </div>
     </div>
   </div>
@@ -2171,16 +2077,18 @@
         var allMembers = await dbGetAll('members');
         var existingIds = new Set(allMembers.map(function(m) { return m.member_id; }));
         var newCount = 0;
-        snapshot.forEach(function(doc) {
-          var data = doc.data();
+        var docs = [];
+        snapshot.forEach(function(doc) { docs.push(doc); });
+        for (var i = 0; i < docs.length; i++) {
+          var data = docs[i].data();
           if (!existingIds.has(data.member_id)) {
             data.status = 'pending';
             data.created_at = data.submittedAt ? data.submittedAt.toDate().toISOString() : new Date().toISOString();
             data.updated_at = new Date().toISOString();
-            dbAdd('members', data);
+            await dbAdd('members', data);
             newCount++;
           }
-        });
+        }
         if (indicator) {
           indicator.textContent = newCount > 0 ? ('✅ 同步成功，新增 ' + newCount + ' 条') : '✅ 已是最新';
           indicator.style.color = newCount > 0 ? '#27ae60' : '#999';
@@ -2278,7 +2186,7 @@
       const toast = document.getElementById('toast');
       const icon = document.getElementById('toastIcon');
       const msg = document.getElementById('toastMsg');
-      var icons = { success: '✅', error: '❌', info: 'ℹ️' };
+      var icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
       icon.textContent = icons[type] || icons.info;
       msg.textContent = message;
       toast.className = 'toast ' + (type || 'info');
@@ -2726,14 +2634,14 @@
           // Update existing member info (keep their status)
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
-          if (firebaseReady) await firestoreAddRegistration(existing);
+          if (firebaseReady) firestoreAddRegistration(existing);
         } else {
           // New registration: set as pending approval
           data.status = 'pending';
           data.created_at = new Date().toISOString();
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
-          if (firebaseReady) await firestoreAddRegistration(data);
+          if (firebaseReady) firestoreAddRegistration(data);
         }
 
         form.style.display = 'none';
@@ -2799,13 +2707,13 @@
         if (existing) {
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
-          if (firebaseReady) await firestoreAddRegistration(existing);
+          if (firebaseReady) firestoreAddRegistration(existing);
         } else {
           data.status = 'pending';
           data.created_at = new Date().toISOString();
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
-          if (firebaseReady) await firestoreAddRegistration(data);
+          if (firebaseReady) firestoreAddRegistration(data);
         }
 
         form.style.display = 'none';
@@ -2899,13 +2807,13 @@
         if (existing) {
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
-          if (firebaseReady) await firestoreAddRegistration(existing);
+          if (firebaseReady) firestoreAddRegistration(existing);
         } else {
           data.status = 'pending';
           data.created_at = new Date().toISOString();
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
-          if (firebaseReady) await firestoreAddRegistration(data);
+          if (firebaseReady) firestoreAddRegistration(data);
         }
 
         form.style.display = 'none';
@@ -3943,7 +3851,7 @@
 
       // Generate license reminders now that member is approved
       await generateReminders(m.id, m.member_id);
-      if (firebaseReady) await firestoreUpdateStatus(m.member_id, 'approved');
+      if (firebaseReady) firestoreUpdateStatus(m.member_id, 'approved');
 
       closeModal('approvalModal');
       await logAction('批准入会：' + fullName(m));
@@ -3970,7 +3878,7 @@
         m.updated_at = new Date().toISOString();
         await dbPut('members', m);
         await logAction('拒绝入会申请：' + fullName(m));
-        if (firebaseReady) await firestoreUpdateStatus(m.member_id, 'rejected');
+        if (firebaseReady) firestoreUpdateStatus(m.member_id, 'rejected');
         showToast('已拒绝 ' + fullName(m) + ' 的入会申请', 'info');
         renderApprovals();
 
