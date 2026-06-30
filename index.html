@@ -2010,9 +2010,9 @@
     // ============================================
     var firebaseConfig = {
       apiKey: "AIzaSyAgTQInbe8zjRmmKobGmljxWex6NzMFZk",
-      authDomain: "shouliehui.firebaseapp.com",
-      projectId: "shouliehui",
-      storageBucket: "shouliehui.appspot.com",
+      authDomain: "shouliexiehui.firebaseapp.com",
+      projectId: "shouliexiehui",
+      storageBucket: "shouliexiehui.appspot.com",
       messagingSenderId: "21034879186",
       appId: "1:21034879186:web:e64251d3dd7a463e93850b"
     };
@@ -2097,7 +2097,7 @@
             submittedAt: { timestampValue: new Date().toISOString() }
           }
         };
-        var url = 'https://firestore.googleapis.com/v1/projects/shouliehui/databases/(default)/documents/registrations/' + encodeURIComponent(data.member_id);
+        var url = 'https://firestore.googleapis.com/v1/projects/shouliexiehui/databases/(default)/documents/registrations/' + encodeURIComponent(data.member_id);
         var resp = await fetch(url, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -4814,4 +4814,63 @@
               non_restricted_license_number: 'PAL-NR-2023-3456', non_restricted_license_issue_date: '2023-09-20',
               restricted_license_number: 'PAL-R-2023-0077', restricted_license_issue_date: '2023-09-20',
               photo: '', status: 'active', join_date: '2023-09-20', renewal_date: '2023-09-20',
-              created_at: '2023-09-20T00:00:00.000Z', updated_at: '2023-09-20T00:00:00.000
+              created_at: '2023-09-20T00:00:00.000Z', updated_at: '2023-09-20T00:00:00.000Z'
+            },
+            {
+              member_id: 'CHSSA-2024-001', last_name: '\u8D75', first_name: '\u6587', name: '\u8D75\u6587',
+              gender: '\u7537', nationality: '\u4E2D\u56FD', identity: 'PR',
+              document_number: '130101198812121234', phone: '+1-514-555-0505', email: 'zhaowen@example.com',
+              hunting_license_number: 'HL-2024-00654', hunting_license_issue_date: '2024-11-05',
+              non_restricted_license_number: 'PAL-NR-2024-7890', non_restricted_license_issue_date: '2024-11-05',
+              restricted_license_number: '', restricted_license_issue_date: '',
+              photo: '', status: 'active', join_date: '2024-11-05', renewal_date: '2024-11-05',
+              created_at: '2024-11-05T00:00:00.000Z', updated_at: '2024-11-05T00:00:00.000Z'
+            }
+          ];
+
+          for (var _am of _activeMembers) {
+            var _dbId = await dbAdd('members', _am);
+            await generateReminders(_dbId, _am.member_id);
+          }
+
+          console.log('[TEST] 7 test members added (2 pending + 5 active)');
+        } catch(e) { console.error('[TEST] Error:', e); }
+      }
+      // Inject SVG logo into all logo containers
+      const logoContainers = ['landingLogo', 'regLogo', 'regLogoEn', 'regLogoFr', 'sidebarLogo', 'loginLogo'];
+      logoContainers.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && !el.querySelector('img')) el.innerHTML = LOGO_SVG;
+      });
+
+
+      // Check URL hash for direct registration access
+      if (window.location.hash === '#register') {
+        showRegister();
+      } else if (window.location.hash === '#registerEn') {
+        showRegisterEn();
+      } else if (window.location.hash === '#registerFr') {
+        showRegisterFr();
+      }
+
+      // Request fullscreen on first user interaction (browsers require user gesture)
+      function requestFullscreen() {
+        const el = document.documentElement;
+        try {
+          if (el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+          else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+          else if (el.msRequestFullscreen) el.msRequestFullscreen();
+        } catch(e) {}
+        // Remove listeners after first trigger
+        document.removeEventListener('click', requestFullscreen);
+        document.removeEventListener('keydown', requestFullscreen);
+        document.removeEventListener('touchstart', requestFullscreen);
+      }
+      document.addEventListener('click', requestFullscreen);
+      document.addEventListener('keydown', requestFullscreen);
+      document.addEventListener('touchstart', requestFullscreen);
+    })();
+  </script>
+
+</body>
+</html>
