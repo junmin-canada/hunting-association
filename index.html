@@ -1369,9 +1369,9 @@
             <button class="btn btn-primary" onclick="renderMembers()">🔄 刷新</button>
           </div>
         </div>
-        <div style="display:flex;gap:0;margin:0 20px 16px;border-bottom:2px solid #eee;">
-          <button id="tabMemberActive" onclick="switchMemberTab('active')" style="padding:10px 24px;font-size:14px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:3px solid var(--primary);color:var(--primary);">会员列表</button>
-          <button id="tabMemberDeleted" onclick="switchMemberTab('deleted')" style="padding:10px 24px;font-size:14px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#999;">已删除</button>
+        <div id="memberTabs" style="display:flex;gap:0;margin:0 20px 16px;border-bottom:2px solid #eee;">
+          <button id="mTabActive" onclick="switchMemberView('active')" style="padding:10px 24px;font-size:14px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:3px solid var(--primary);color:var(--primary);">会员列表</button>
+          <button id="mTabDeleted" onclick="switchMemberView('deleted')" style="padding:10px 24px;font-size:14px;font-weight:500;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;color:#999;">已删除</button>
         </div>
         <div id="memberListView">
         <div id="renewalBanners"></div>
@@ -1398,12 +1398,21 @@
           </div>
         </div>
         </div>
-        <div id="memberDeletedList" style="display:none;">
-          <p style="text-align:center;padding:40px;color:#999;">暂无已删除会员</p>
+        <div id="memberDeletedView" style="display:none;">
+          <div class="table-container">
+            <div style="overflow-x:auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>会员编号</th><th>姓名</th><th>性别</th><th>电话</th><th>邮箱</th><th>入会日期</th><th>删除时间</th><th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="deletedMembersTable"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
-
-      <!-- Reminders -->
       <div class="page" id="page-reminders">
         <div class="top-bar">
           <h1>到期提醒管理</h1>
@@ -3000,7 +3009,7 @@
 
       if (page === 'overview') refreshDashboard();
       if (page === 'approval') { syncFromFirebase(); switchApprovalTab('pending'); }
-      if (page === 'members') { switchMemberTab('active'); renderMembers(); }
+      if (page === 'members') { switchMemberView('active'); }
       if (page === 'reminders') renderReminders();
       if (page === 'qrcode') { loadQrUrl(); generateQR(); }
       if (page === 'events') {
@@ -3227,21 +3236,23 @@
 
         // Build tooltip info
         let tooltipLines = [];
-        tooltipLines.push('性别: ' + (m.gender || '-'));
-        tooltipLines.push('国籍: ' + (m.nationality || '-'));
-        tooltipLines.push('身份: ' + (m.identity || '-'));
-        tooltipLines.push('邮箱: ' + (m.email || '-'));
-        tooltipLines.push('电话: ' + (m.phone || '-'));
+        tooltipLines.push('\u6027\u522B: ' + (m.gender || '-'));
+        tooltipLines.push('\u56FD\u7C4D: ' + (m.nationality || '-'));
+        tooltipLines.push('\u8EAB\u4EFD: ' + (m.identity || '-'));
+        tooltipLines.push('\u90AE\u7BB1: ' + (m.email || '-'));
+        tooltipLines.push('\u7535\u8BDD: ' + (m.phone || '-'));
         if (m.hunting_license_number) {
-          tooltipLines.push('猎牌: ' + esc(m.hunting_license_number));
+          tooltipLines.push('\u730E\u724C: ' + esc(m.hunting_license_number) + ' (\u53D1\u653E: ' + (m.hunting_license_issue_date || '-') + ')');
         }
         if (m.non_restricted_license_number) {
+          const nrIss = m.non_restricted_license_issue_date || '-';
           const nrExp = m.non_restricted_license_issue_date ? addYears(m.non_restricted_license_issue_date, 5) : '-';
-          tooltipLines.push('非限制性: ' + esc(m.non_restricted_license_number) + ' (到期: ' + nrExp + ')');
+          tooltipLines.push('\u975E\u9650\u5236\u6027: ' + esc(m.non_restricted_license_number) + ' (\u53D1\u653E: ' + nrIss + ' \u5230\u671F: ' + nrExp + ')');
         }
         if (m.restricted_license_number) {
+          const rIss = m.restricted_license_issue_date || '-';
           const rExp = m.restricted_license_issue_date ? addYears(m.restricted_license_issue_date, 5) : '-';
-          tooltipLines.push('限制性: ' + esc(m.restricted_license_number) + ' (到期: ' + rExp + ')');
+          tooltipLines.push('\u9650\u5236\u6027: ' + esc(m.restricted_license_number) + ' (\u53D1\u653E: ' + rIss + ' \u5230\u671F: ' + rExp + ')');
         }
         const tooltipText = esc(tooltipLines.join('\n'));
 
@@ -3512,11 +3523,14 @@
       pendingDeleteMemberId = null;
     }
 
-    function switchMemberTab(tab) {
-      var tabA = document.getElementById('tabMemberActive');
-      var tabD = document.getElementById('tabMemberDeleted');
-      var listA = document.getElementById('memberListView');
-      var listD = document.getElementById('memberDeletedList');
+    // ═══════════════════════════════════════════════════════════
+    //  MEMBER VIEW TAB SWITCH + DELETED MEMBERS
+    // ═══════════════════════════════════════════════════════════
+    function switchMemberView(tab) {
+      var tabA = document.getElementById('mTabActive');
+      var tabD = document.getElementById('mTabDeleted');
+      var viewA = document.getElementById('memberListView');
+      var viewD = document.getElementById('memberDeletedView');
       if (tab === 'active') {
         tabA.style.borderBottom = '3px solid var(--primary)';
         tabA.style.color = 'var(--primary)';
@@ -3524,8 +3538,8 @@
         tabD.style.borderBottom = '3px solid transparent';
         tabD.style.color = '#999';
         tabD.style.fontWeight = '500';
-        listA.style.display = '';
-        listD.style.display = 'none';
+        viewA.style.display = '';
+        viewD.style.display = 'none';
         renderMembers();
       } else {
         tabD.style.borderBottom = '3px solid var(--primary)';
@@ -3534,129 +3548,115 @@
         tabA.style.borderBottom = '3px solid transparent';
         tabA.style.color = '#999';
         tabA.style.fontWeight = '500';
-        listA.style.display = 'none';
-        listD.style.display = '';
+        viewA.style.display = 'none';
+        viewD.style.display = '';
         renderDeletedMembers();
       }
     }
 
-    async function renderDeletedMembers() {
-      const allMembers = await dbGetAll('members');
-      const deleted = allMembers.filter(m => m.status === 'deleted');
-      const container = document.getElementById('memberDeletedList');
+    var _delTableBound = false;
 
-      // Attach event delegation once
-      if (!container._delegated) {
-        container._delegated = true;
-        container.addEventListener('click', function(e) {
-          var btn = e.target.closest('button[data-action]');
+    async function renderDeletedMembers() {
+      var allMembers = await dbGetAll('members');
+      var deleted = allMembers.filter(function(m) { return m.status === 'deleted'; });
+      var tbody = document.getElementById('deletedMembersTable');
+      if (!tbody) return;
+
+      // Bind event delegation once
+      if (!_delTableBound) {
+        _delTableBound = true;
+        tbody.addEventListener('click', function(e) {
+          var btn = e.target.closest('button[data-act]');
           if (!btn) return;
-          var action = btn.getAttribute('data-action');
-          var id = parseInt(btn.getAttribute('data-id'), 10);
-          console.log('Deleted tab button clicked:', action, id);
-          if (action === 'restore') restoreDeletedMember(id);
-          else if (action === 'permdelete') permanentDeleteFromDeleted(id);
+          var act = btn.getAttribute('data-act');
+          var id = parseInt(btn.getAttribute('data-mid'), 10);
+          if (act === 'restore') doRestoreDeleted(id);
+          else if (act === 'permdelete') doPermDelete(id);
         });
       }
 
       if (deleted.length === 0) {
-        container.innerHTML = '<p style=”text-align:center;padding:40px;color:#999;”>\u6682\u65E0\u5DF2\u5220\u9664\u4F1A\u5458</p>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#999;">\u6682\u65E0\u5DF2\u5220\u9664\u4F1A\u5458</td></tr>';
         return;
       }
-      container.style.padding = '0 20px 20px';
-      deleted.sort(function(a,b){ return (b.deleted_at||'').localeCompare(a.deleted_at||''); });
-      container.innerHTML = deleted.map(function(m) {
-        console.log('Rendering deleted member:', m.id, fullName(m));
-        const photoHtml = m.photo
-          ? '<img src=”' + m.photo + '” class=”approval-photo” alt=”\u7167\u7247”>'
-          : '<div class=”approval-photo-placeholder”>\uD83D\uDC64</div>';
-        const deletedTime = m.deleted_at ? m.deleted_at.substring(0,10) : '-';
 
-        let licHtml = '';
-        if (m.hunting_license_number || m.hunting_license_issue_date) {
-          licHtml += '<div style=”background:#f9f9f9;border-radius:6px;padding:8px 12px;margin-top:8px;”>';
-          licHtml += '<span style=”font-size:12px;font-weight:600;color:var(--primary);”>\uD83C\uDFAF \u730E\u724C</span>';
-          licHtml += '<div class=”info-grid” style=”margin-top:4px;”>';
-          licHtml += '<span>\u53F7\u7801\uFF1A' + esc(m.hunting_license_number||'-') + '</span>';
-          licHtml += '<span>\u53D1\u653E\u65F6\u95F4\uFF1A' + (m.hunting_license_issue_date||'-') + '</span>';
-          licHtml += '</div></div>';
-        }
-        if (m.non_restricted_license_number || m.non_restricted_license_issue_date) {
-          licHtml += '<div style=”background:#f9f9f9;border-radius:6px;padding:8px 12px;margin-top:6px;”>';
-          licHtml += '<span style=”font-size:12px;font-weight:600;color:var(--primary);”>\uD83D\uDD2B \u975E\u9650\u5236\u6027\u67AA\u68B0\u724C\u7167</span>';
-          licHtml += '<div class=”info-grid” style=”margin-top:4px;”>';
-          licHtml += '<span>\u53F7\u7801\uFF1A' + esc(m.non_restricted_license_number||'-') + '</span>';
-          licHtml += '<span>\u53D1\u653E\u65F6\u95F4\uFF1A' + (m.non_restricted_license_issue_date||'-') + '</span>';
-          licHtml += '</div></div>';
-        }
-        if (m.restricted_license_number || m.restricted_license_issue_date) {
-          licHtml += '<div style=”background:#f9f9f9;border-radius:6px;padding:8px 12px;margin-top:6px;”>';
-          licHtml += '<span style=”font-size:12px;font-weight:600;color:var(--primary);”>\uD83D\uDEE1\uFE0F \u9650\u5236\u6027\u67AA\u68B0\u724C\u7167</span>';
-          licHtml += '<div class=”info-grid” style=”margin-top:4px;”>';
-          licHtml += '<span>\u53F7\u7801\uFF1A' + esc(m.restricted_license_number||'-') + '</span>';
-          licHtml += '<span>\u53D1\u653E\u65F6\u95F4\uFF1A' + (m.restricted_license_issue_date||'-') + '</span>';
-          licHtml += '</div></div>';
-        }
+      deleted.sort(function(a, b) {
+        return (b.deleted_at || '').localeCompare(a.deleted_at || '');
+      });
 
-        return '<div class=”approval-card” style=”opacity:0.75;”>'
-          + photoHtml
-          + '<div class=”approval-info”>'
-          + '<h4>' + esc(fullName(m)) + ' <span style=”font-size:12px;color:#999;font-weight:normal;”>' + esc(m.member_id) + '</span></h4>'
-          + '<div class=”info-grid”>'
-          + '<span>\u6027\u522B\uFF1A' + esc(m.gender||'-') + '</span>'
-          + '<span>\u56FD\u7C4D\uFF1A' + esc(m.nationality||'-') + '</span>'
-          + '<span>\u8EAB\u4EFD\uFF1A' + esc(m.identity||'-') + '</span>'
-          + '<span>\u8BC1\u4EF6\u53F7\uFF1A' + esc(m.document_number||'-') + '</span>'
-          + '<span>\u7535\u8BDD\uFF1A' + esc(m.phone||'-') + '</span>'
-          + '<span>\u90AE\u7BB1\uFF1A' + esc(m.email||'-') + '</span>'
-          + '<span>\u5165\u4F1A\uFF1A' + (m.join_date||'-') + '</span>'
-          + '<span>\u7EED\u8D39\uFF1A' + (m.renewal_date||'-') + '</span>'
-          + '<span>\u5220\u9664\u65F6\u95F4\uFF1A' + deletedTime + '</span>'
-          + '</div>'
-          + licHtml
-          + '</div>'
-          + '<div class=”approval-actions”>'
-          + '<button class=”btn btn-success” data-action=”restore” data-id=”' + m.id + '”>\u2705 \u6062\u590D\u4F1A\u5458</button>'
-          + '<button class=”btn btn-danger” data-action=”permdelete” data-id=”' + m.id + '”>\u274C \u5F7B\u5E95\u5220\u9664</button>'
-          + '</div></div>';
-      }).join('');
+      var rows = '';
+      for (var i = 0; i < deleted.length; i++) {
+        var m = deleted[i];
+        var delDate = m.deleted_at ? m.deleted_at.substring(0, 10) : '-';
+        var tip = [];
+        if (m.hunting_license_number) {
+          tip.push('\u730E\u724C: ' + esc(m.hunting_license_number) + ' (\u53D1\u653E: ' + (m.hunting_license_issue_date || '-') + ')');
+        }
+        if (m.non_restricted_license_number) {
+          var nIss = m.non_restricted_license_issue_date || '-';
+          var nExp = m.non_restricted_license_issue_date ? addYears(m.non_restricted_license_issue_date, 5) : '-';
+          tip.push('\u975E\u9650\u5236\u6027: ' + esc(m.non_restricted_license_number) + ' (\u53D1\u653E: ' + nIss + ' \u5230\u671F: ' + nExp + ')');
+        }
+        if (m.restricted_license_number) {
+          var rIss = m.restricted_license_issue_date || '-';
+          var rExp = m.restricted_license_issue_date ? addYears(m.restricted_license_issue_date, 5) : '-';
+          tip.push('\u9650\u5236\u6027: ' + esc(m.restricted_license_number) + ' (\u53D1\u653E: ' + rIss + ' \u5230\u671F: ' + rExp + ')');
+        }
+        var nameTip = tip.length > 0 ? ' title="' + esc(tip.join('\n')) + '" style="cursor:help;text-decoration:underline dotted #999;"' : '';
+        rows += '<tr>'
+          + '<td>' + esc(m.member_id || '-') + '</td>'
+          + '<td' + nameTip + '>' + esc(fullName(m)) + '</td>'
+          + '<td>' + esc(m.gender || '-') + '</td>'
+          + '<td>' + esc(m.phone || '-') + '</td>'
+          + '<td>' + esc(m.email || '-') + '</td>'
+          + '<td>' + (m.join_date || '-') + '</td>'
+          + '<td>' + delDate + '</td>'
+          + '<td>'
+          + '<button class="btn btn-success" style="padding:4px 10px;font-size:12px;" data-act="restore" data-mid="' + m.id + '">\u6062\u590D</button> '
+          + '<button class="btn btn-danger" style="padding:4px 10px;font-size:12px;" data-act="permdelete" data-mid="' + m.id + '">\u5F7B\u5E95\u5220\u9664</button>'
+          + '</td></tr>';
+      }
+      tbody.innerHTML = rows;
     }
 
-    async function restoreDeletedMember(id) {
+    async function doRestoreDeleted(id) {
       try {
-        console.log('restoreDeletedMember called with id:', id, typeof id);
-        const m = await dbGet('members', id);
-        if (!m) { console.log('Member not found for id:', id); showToast('\u4F1A\u5458\u4E0D\u5B58\u5728', 'error'); return; }
+        var m = await dbGet('members', id);
+        if (!m) { showToast('\u4F1A\u5458\u4E0D\u5B58\u5728', 'error'); return; }
         showConfirm('\u6062\u590D\u4F1A\u5458', '\u786E\u5B9A\u6062\u590D ' + fullName(m) + ' \u7684\u4F1A\u5458\u8EAB\u4EFD\u5417\uFF1F', '\u267B\uFE0F', async function() {
           m.status = 'active';
           delete m.deleted_at;
           m.updated_at = new Date().toISOString();
           await dbPut('members', m);
           await logAction('\u6062\u590D\u5DF2\u5220\u9664\u4F1A\u5458\uFF1A' + fullName(m));
-          showToast('\u5DF2\u6062\u590D ' + fullName(m) + ' \u7684\u4F1A\u5458\u8EAB\u4EFD', 'success');
+          showToast('\u5DF2\u6062\u590D ' + fullName(m), 'success');
           renderDeletedMembers();
           refreshDashboard();
         });
-      } catch(e) { console.error('restoreDeletedMember error:', e); showToast('\u64CD\u4F5C\u5931\u8D25: ' + e.message, 'error'); }
+      } catch (e) {
+        showToast('\u64CD\u4F5C\u5931\u8D25: ' + e.message, 'error');
+      }
     }
 
-    async function permanentDeleteFromDeleted(id) {
+    async function doPermDelete(id) {
       try {
-        console.log('permanentDeleteFromDeleted called with id:', id, typeof id);
-        const m = await dbGet('members', id);
-        if (!m) { console.log('Member not found for id:', id); showToast('\u4F1A\u5458\u4E0D\u5B58\u5728', 'error'); return; }
+        var m = await dbGet('members', id);
+        if (!m) { showToast('\u4F1A\u5458\u4E0D\u5B58\u5728', 'error'); return; }
         showConfirm('\u5F7B\u5E95\u5220\u9664', '\u786E\u5B9A\u5F7B\u5E95\u5220\u9664 ' + fullName(m) + ' \u7684\u8BB0\u5F55\u5417\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u64A4\u9500\u3002', '\u26A0\uFE0F', async function() {
           await dbDelete('members', id);
-          const reminders = await dbGetAll('reminders');
-          for (const r of reminders.filter(r => r.memberDbId === id)) {
-            await dbDelete('reminders', r.id);
+          var reminders = await dbGetAll('reminders');
+          var toRemove = reminders.filter(function(r) { return r.memberDbId === id; });
+          for (var i = 0; i < toRemove.length; i++) {
+            await dbDelete('reminders', toRemove[i].id);
           }
           await logAction('\u5F7B\u5E95\u5220\u9664\u4F1A\u5458\uFF1A' + fullName(m));
           showToast('\u5DF2\u5F7B\u5E95\u5220\u9664 ' + fullName(m), 'info');
           renderDeletedMembers();
           refreshDashboard();
         });
-      } catch(e) { console.error('permanentDeleteFromDeleted error:', e); showToast('\u64CD\u4F5C\u5931\u8D25: ' + e.message, 'error'); }
+      } catch (e) {
+        showToast('\u64CD\u4F5C\u5931\u8D25: ' + e.message, 'error');
+      }
     }
 
     // ═══════════════════════════════════════════════════════════
