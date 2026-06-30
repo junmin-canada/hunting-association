@@ -2188,7 +2188,8 @@
           var existing = localMap[data.member_id];
 
           if (!existing) {
-            data.id = undefined;
+            // Remove id so IndexedDB autoIncrement generates a proper numeric key
+            delete data.id;
             data.created_at = data.created_at || new Date().toISOString();
             data.updated_at = data.updated_at || new Date().toISOString();
             await dbAdd('members', data);
@@ -2235,6 +2236,8 @@
           else if (f.integerValue !== undefined) result[keys[i]] = parseInt(f.integerValue);
           else if (f.booleanValue !== undefined) result[keys[i]] = f.booleanValue;
         }
+        // Strip id — IndexedDB uses autoIncrement numeric keyPath, string ids break it
+        delete result.id;
         return result;
       }
 
@@ -2270,6 +2273,7 @@
           var snapshot = await firestoreTimeout(firestoreDb.collection('registrations').get(), 15000);
           snapshot.forEach(function(doc) {
             var d = doc.data();
+            delete d.id; // Strip id — IndexedDB autoIncrement needs no pre-set key
             if (d.submittedAt && d.submittedAt.toDate) d.submittedAtStr = d.submittedAt.toDate().toISOString();
             if (d.updatedAt && d.updatedAt.toDate) d.updatedAtStr = d.updatedAt.toDate().toISOString();
             if (!d.created_at && d.submittedAtStr) d.created_at = d.submittedAtStr;
