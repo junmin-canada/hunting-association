@@ -2083,24 +2083,44 @@
       var indicator = document.getElementById('syncIndicator');
       if (indicator) { indicator.textContent = '🔄 同步中...'; indicator.style.color = '#e67e22'; }
       try {
-        var snapshot = await firestoreTimeout(firestoreDb.collection('registrations').where('status', '==', 'pending').get(), 8000);
+        var snapshot = await firestoreTimeout(firestoreDb.collection('registrations').where('status', '==', 'pending').get(), 15000);
         var allMembers = await dbGetAll('members');
-        var existingIds = new Set(allMembers.map(function(m) { return m.member_id; }));
+        var memberMap = {};
+        allMembers.forEach(function(m) { memberMap[m.member_id] = m; });
         var newCount = 0;
         var docs = [];
         snapshot.forEach(function(doc) { docs.push(doc); });
         for (var i = 0; i < docs.length; i++) {
           var data = docs[i].data();
-          if (!existingIds.has(data.member_id)) {
+          var existing = memberMap[data.member_id];
+          if (!existing) {
+            // New member - add to local DB
             data.status = 'pending';
             data.created_at = data.submittedAt ? data.submittedAt.toDate().toISOString() : new Date().toISOString();
             data.updated_at = new Date().toISOString();
             await dbAdd('members', data);
             newCount++;
+          } else if (existing.status !== 'pending') {
+            // Member was already approved/rejected - check if this is a newer submission
+            var localTime = existing.updated_at || existing.created_at || '';
+            var firebaseTime = data.submittedAt ? data.submittedAt.toDate().toISOString() : '';
+            if (firebaseTime > localTime) {
+              // Firebase has newer data, update local member
+              var keys = Object.keys(data);
+              for (var k = 0; k < keys.length; k++) {
+                if (keys[k] !== 'status' && keys[k] !== 'submittedAt' && data[keys[k]] !== undefined && data[keys[k]] !== '') {
+                  existing[keys[k]] = data[keys[k]];
+                }
+              }
+              existing.status = 'pending';
+              existing.updated_at = new Date().toISOString();
+              await dbPut('members', existing);
+              newCount++;
+            }
           }
         }
         if (indicator) {
-          indicator.textContent = newCount > 0 ? ('✅ 同步成功，新增 ' + newCount + ' 条') : '✅ 已是最新';
+          indicator.textContent = newCount > 0 ? ('✅ 同步成功，新增/更新 ' + newCount + ' 条') : '✅ 已是最新';
           indicator.style.color = newCount > 0 ? '#27ae60' : '#999';
         }
         if (newCount > 0) { renderApprovals(); refreshDashboard(); }
