@@ -2037,7 +2037,7 @@
     }
 
     async function firestoreAddRegistration(data) {
-      if (!firebaseReady || !firestoreDb) return;
+      if (!firebaseReady || !firestoreDb) return false;
       try {
         await firestoreDb.collection('registrations').doc(data.member_id).set({
           member_id: data.member_id,
@@ -2061,8 +2061,10 @@
           submittedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
         console.log('Registration synced to Firebase:', data.member_id);
+        return true;
       } catch(e) {
         console.error('Firebase write FAILED:', e.code, e.message, e);
+        return false;
       }
     }
 
@@ -2664,14 +2666,22 @@
           // Update existing member info (keep their status)
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
-          if (firebaseReady) await firestoreAddRegistration(existing);
+          if (firebaseReady) {
+            var synced = await firestoreAddRegistration(existing);
+            if (synced) showToast('提交成功，已同步到云端', 'success');
+            else showToast('本地保存成功，但云端同步失败，请稍后重试', 'error');
+          }
         } else {
           // New registration: set as pending approval
           data.status = 'pending';
           data.created_at = new Date().toISOString();
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
-          if (firebaseReady) await firestoreAddRegistration(data);
+          if (firebaseReady) {
+            var synced = await firestoreAddRegistration(data);
+            if (synced) showToast('提交成功，已同步到云端', 'success');
+            else showToast('本地保存成功，但云端同步失败，请稍后重试', 'error');
+          }
         }
 
         form.style.display = 'none';
@@ -2737,13 +2747,21 @@
         if (existing) {
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
-          if (firebaseReady) await firestoreAddRegistration(existing);
+          if (firebaseReady) {
+            var synced = await firestoreAddRegistration(existing);
+            if (synced) showToast('Submitted and synced to cloud', 'success');
+            else showToast('Saved locally but cloud sync failed, please retry later', 'error');
+          }
         } else {
           data.status = 'pending';
           data.created_at = new Date().toISOString();
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
-          if (firebaseReady) await firestoreAddRegistration(data);
+          if (firebaseReady) {
+            var synced = await firestoreAddRegistration(data);
+            if (synced) showToast('Submitted and synced to cloud', 'success');
+            else showToast('Saved locally but cloud sync failed, please retry later', 'error');
+          }
         }
 
         form.style.display = 'none';
@@ -2837,13 +2855,21 @@
         if (existing) {
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
-          if (firebaseReady) await firestoreAddRegistration(existing);
+          if (firebaseReady) {
+            var synced = await firestoreAddRegistration(existing);
+            if (synced) showToast('Soumis et synchronise avec le cloud', 'success');
+            else showToast('Sauvegarde locale reussie mais echec de sync cloud, reessayez', 'error');
+          }
         } else {
           data.status = 'pending';
           data.created_at = new Date().toISOString();
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
-          if (firebaseReady) await firestoreAddRegistration(data);
+          if (firebaseReady) {
+            var synced = await firestoreAddRegistration(data);
+            if (synced) showToast('Soumis et synchronise avec le cloud', 'success');
+            else showToast('Sauvegarde locale reussie mais echec de sync cloud, reessayez', 'error');
+          }
         }
 
         form.style.display = 'none';
