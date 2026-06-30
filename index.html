@@ -2036,8 +2036,13 @@
       })]);
     }
 
+    var _lastFirebaseError = '';
+
     async function firestoreAddRegistration(data) {
       if (!firebaseReady || !firestoreDb) return false;
+      _lastFirebaseError = '';
+
+      // Try SDK first with 15s timeout
       try {
         await firestoreTimeout(firestoreDb.collection('registrations').doc(data.member_id).set({
           member_id: data.member_id,
@@ -2059,13 +2064,59 @@
           restricted_license_issue_date: data.restricted_license_issue_date || '',
           status: 'pending',
           submittedAt: firebase.firestore.FieldValue.serverTimestamp()
-        }), 30000);
-        console.log('Registration synced to Firebase:', data.member_id);
+        }), 15000);
+        console.log('Registration synced to Firebase (SDK):', data.member_id);
         return true;
       } catch(e) {
-        console.error('Firebase write FAILED:', e.code, e.message, e);
-        return false;
+        console.warn('Firebase SDK write failed, trying REST API:', e.message);
+        _lastFirebaseError = 'SDK: ' + (e.message || 'unknown');
       }
+
+      // Fallback: Firestore REST API (bypasses SDK transport layer)
+      try {
+        var docData = {
+          fields: {
+            member_id: { stringValue: data.member_id || '' },
+            name: { stringValue: data.name || '' },
+            last_name: { stringValue: data.last_name || '' },
+            first_name: { stringValue: data.first_name || '' },
+            gender: { stringValue: data.gender || '' },
+            nationality: { stringValue: data.nationality || '' },
+            identity: { stringValue: data.identity || '' },
+            document_number: { stringValue: data.document_number || '' },
+            phone: { stringValue: data.phone || '' },
+            email: { stringValue: data.email || '' },
+            photo: { stringValue: (data.photo || '').substring(0, 100) },
+            hunting_license_number: { stringValue: data.hunting_license_number || '' },
+            hunting_license_issue_date: { stringValue: data.hunting_license_issue_date || '' },
+            non_restricted_license_number: { stringValue: data.non_restricted_license_number || '' },
+            non_restricted_license_issue_date: { stringValue: data.non_restricted_license_issue_date || '' },
+            restricted_license_number: { stringValue: data.restricted_license_number || '' },
+            restricted_license_issue_date: { stringValue: data.restricted_license_issue_date || '' },
+            status: { stringValue: 'pending' },
+            submittedAt: { timestampValue: new Date().toISOString() }
+          }
+        };
+        var url = 'https://firestore.googleapis.com/v1/projects/shouliehui/databases/(default)/documents/registrations/' + encodeURIComponent(data.member_id);
+        var resp = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(docData)
+        });
+        if (resp.ok) {
+          console.log('Registration synced to Firebase (REST):', data.member_id);
+          _lastFirebaseError = '';
+          return true;
+        } else {
+          var errText = await resp.text();
+          _lastFirebaseError = 'REST ' + resp.status + ': ' + errText.substring(0, 100);
+          console.error('Firebase REST write failed:', resp.status, errText);
+        }
+      } catch(e2) {
+        _lastFirebaseError = 'REST: ' + (e2.message || 'unknown');
+        console.error('Firebase REST write error:', e2);
+      }
+      return false;
     }
 
     async function firestoreUpdateStatus(memberId, status) {
@@ -2688,7 +2739,7 @@
             statusEl.style.color = '#27ae60';
             statusEl.style.background = '#eafaf1';
           } else if (syncResult === 'fail') {
-            statusEl.textContent = '⚠️ 云端同步失败，管理员可能无法收到，请联系管理员';
+            statusEl.innerHTML = '⚠️ 云端同步失败，请联系管理员<br><span style="font-size:11px;color:#999;">' + (_lastFirebaseError || 'unknown error') + '</span>';
             statusEl.style.color = '#c0392b';
             statusEl.style.background = '#fdecea';
           } else {
@@ -4763,63 +4814,4 @@
               non_restricted_license_number: 'PAL-NR-2023-3456', non_restricted_license_issue_date: '2023-09-20',
               restricted_license_number: 'PAL-R-2023-0077', restricted_license_issue_date: '2023-09-20',
               photo: '', status: 'active', join_date: '2023-09-20', renewal_date: '2023-09-20',
-              created_at: '2023-09-20T00:00:00.000Z', updated_at: '2023-09-20T00:00:00.000Z'
-            },
-            {
-              member_id: 'CHSSA-2024-001', last_name: '\u8D75', first_name: '\u6587', name: '\u8D75\u6587',
-              gender: '\u7537', nationality: '\u4E2D\u56FD', identity: 'PR',
-              document_number: '130101198812121234', phone: '+1-514-555-0505', email: 'zhaowen@example.com',
-              hunting_license_number: 'HL-2024-00654', hunting_license_issue_date: '2024-11-05',
-              non_restricted_license_number: 'PAL-NR-2024-7890', non_restricted_license_issue_date: '2024-11-05',
-              restricted_license_number: '', restricted_license_issue_date: '',
-              photo: '', status: 'active', join_date: '2024-11-05', renewal_date: '2024-11-05',
-              created_at: '2024-11-05T00:00:00.000Z', updated_at: '2024-11-05T00:00:00.000Z'
-            }
-          ];
-
-          for (var _am of _activeMembers) {
-            var _dbId = await dbAdd('members', _am);
-            await generateReminders(_dbId, _am.member_id);
-          }
-
-          console.log('[TEST] 7 test members added (2 pending + 5 active)');
-        } catch(e) { console.error('[TEST] Error:', e); }
-      }
-      // Inject SVG logo into all logo containers
-      const logoContainers = ['landingLogo', 'regLogo', 'regLogoEn', 'regLogoFr', 'sidebarLogo', 'loginLogo'];
-      logoContainers.forEach(id => {
-        const el = document.getElementById(id);
-        if (el && !el.querySelector('img')) el.innerHTML = LOGO_SVG;
-      });
-
-
-      // Check URL hash for direct registration access
-      if (window.location.hash === '#register') {
-        showRegister();
-      } else if (window.location.hash === '#registerEn') {
-        showRegisterEn();
-      } else if (window.location.hash === '#registerFr') {
-        showRegisterFr();
-      }
-
-      // Request fullscreen on first user interaction (browsers require user gesture)
-      function requestFullscreen() {
-        const el = document.documentElement;
-        try {
-          if (el.requestFullscreen) el.requestFullscreen().catch(()=>{});
-          else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-          else if (el.msRequestFullscreen) el.msRequestFullscreen();
-        } catch(e) {}
-        // Remove listeners after first trigger
-        document.removeEventListener('click', requestFullscreen);
-        document.removeEventListener('keydown', requestFullscreen);
-        document.removeEventListener('touchstart', requestFullscreen);
-      }
-      document.addEventListener('click', requestFullscreen);
-      document.addEventListener('keydown', requestFullscreen);
-      document.addEventListener('touchstart', requestFullscreen);
-    })();
-  </script>
-
-</body>
-</html>
+              created_at: '2023-09-20T00:00:00.000Z', updated_at: '2023-09-20T00:00:00.000
