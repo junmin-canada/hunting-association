@@ -2119,6 +2119,42 @@
       return false;
     }
 
+    // Write full member data to Firestore for cross-device sync
+    async function firestoreWriteMember(member) {
+      if (!firebaseReady || !firestoreDb || !member.member_id) return;
+      try {
+        await firestoreTimeout(firestoreDb.collection('registrations').doc(member.member_id).set({
+          member_id: member.member_id || '',
+          name: member.name || '',
+          last_name: member.last_name || '',
+          first_name: member.first_name || '',
+          photo: (member.photo || '').substring(0, 200),
+          gender: member.gender || '',
+          nationality: member.nationality || '',
+          identity: member.identity || '',
+          document_number: member.document_number || '',
+          phone: member.phone || '',
+          email: member.email || '',
+          hunting_license_number: member.hunting_license_number || '',
+          hunting_license_issue_date: member.hunting_license_issue_date || '',
+          non_restricted_license_number: member.non_restricted_license_number || '',
+          non_restricted_license_issue_date: member.non_restricted_license_issue_date || '',
+          restricted_license_number: member.restricted_license_number || '',
+          restricted_license_issue_date: member.restricted_license_issue_date || '',
+          join_date: member.join_date || '',
+          renewal_date: member.renewal_date || '',
+          status: member.status || 'pending',
+          created_at: member.created_at || '',
+          updated_at: member.updated_at || new Date().toISOString(),
+          rejected_at: member.rejected_at || '',
+          deleted_at: member.deleted_at || ''
+        }, { merge: true }), 15000);
+        console.log('Member data synced to Firestore:', member.member_id, member.status);
+      } catch(e) {
+        console.warn('firestoreWriteMember failed:', e.message);
+      }
+    }
+
     async function firestoreUpdateStatus(memberId, status) {
       if (!firebaseReady || !firestoreDb) return;
       try {
@@ -2136,48 +2172,77 @@
       var indicator = document.getElementById('syncIndicator');
       if (indicator) { indicator.textContent = '🔄 同步中...'; indicator.style.color = '#e67e22'; }
       try {
-        var snapshot = await firestoreTimeout(firestoreDb.collection('registrations').where('status', '==', 'pending').get(), 15000);
+        // Fetch ALL documents from Firestore (not just pending)
+        var snapshot = await firestoreTimeout(firestoreDb.collection('registrations').get(), 15000);
         var allMembers = await dbGetAll('members');
-        var memberMap = {};
-        allMembers.forEach(function(m) { memberMap[m.member_id] = m; });
+        var localMap = {};
+        allMembers.forEach(function(m) { localMap[m.member_id] = m; });
         var newCount = 0;
+        var updatedCount = 0;
         var docs = [];
         snapshot.forEach(function(doc) { docs.push(doc); });
+        var firebaseIds = {};
+
+        // Process all Firestore documents
         for (var i = 0; i < docs.length; i++) {
           var data = docs[i].data();
-          var existing = memberMap[data.member_id];
+          firebaseIds[data.member_id] = true;
+          var existing = localMap[data.member_id];
+
           if (!existing) {
-            // New member - add to local DB
-            data.status = 'pending';
-            data.created_at = data.submittedAt ? data.submittedAt.toDate().toISOString() : new Date().toISOString();
-            data.updated_at = new Date().toISOString();
+            // New member from Firestore - add to local DB
+            data.id = undefined; // Let IndexedDB assign ID
+            data.created_at = data.submittedAt ? data.submittedAt.toDate().toISOString() : (data.created_at || new Date().toISOString());
+            data.updated_at = data.updatedAt ? data.updatedAt.toDate().toISOString() : (data.updated_at || new Date().toISOString());
             await dbAdd('members', data);
             newCount++;
-          } else if (existing.status !== 'pending') {
-            // Member was already approved/rejected - check if this is a newer submission
+          } else {
+            // Existing member - compare timestamps and update if Firestore has newer data
             var localTime = existing.updated_at || existing.created_at || '';
-            var firebaseTime = data.submittedAt ? data.submittedAt.toDate().toISOString() : '';
+            var firebaseTime = data.updatedAt ? data.updatedAt.toDate().toISOString() : (data.updated_at || '');
             if (firebaseTime > localTime) {
-              // Firebase has newer data, update local member
+              // Firestore has newer data - update local
               var keys = Object.keys(data);
               for (var k = 0; k < keys.length; k++) {
-                if (keys[k] !== 'status' && keys[k] !== 'submittedAt' && data[keys[k]] !== undefined && data[keys[k]] !== '') {
-                  existing[keys[k]] = data[keys[k]];
+                var key = keys[k];
+                if (key === 'submittedAt' || key === 'updatedAt') continue;
+                if (key === 'id') continue;
+                if (data[key] !== undefined && data[key] !== '') {
+                  existing[key] = data[key];
                 }
               }
-              existing.status = 'pending';
               existing.updated_at = new Date().toISOString();
               await dbPut('members', existing);
-              newCount++;
+              updatedCount++;
             }
           }
         }
-        if (indicator) {
-          indicator.textContent = newCount > 0 ? ('✅ 同步成功，新增/更新 ' + newCount + ' 条') : '✅ 已是最新';
-          indicator.style.color = newCount > 0 ? '#27ae60' : '#999';
+
+        // Push local-only members (not in Firestore) to Firestore
+        for (var j = 0; j < allMembers.length; j++) {
+          var localMember = allMembers[j];
+          if (!firebaseIds[localMember.member_id] && localMember.member_id) {
+            await firestoreWriteMember(localMember);
+          }
         }
-        if (newCount > 0) { renderApprovals(); refreshDashboard(); }
-        return newCount;
+
+        var totalChanges = newCount + updatedCount;
+        if (indicator) {
+          if (totalChanges > 0) {
+            indicator.textContent = '✅ 同步成功，新增 ' + newCount + ' 条，更新 ' + updatedCount + ' 条';
+            indicator.style.color = '#27ae60';
+          } else {
+            indicator.textContent = '✅ 已是最新';
+            indicator.style.color = '#999';
+          }
+        }
+        if (totalChanges > 0) {
+          renderApprovals();
+          renderMembers();
+          renderDeletedMembers();
+          refreshDashboard();
+        }
+        return totalChanges;
       } catch(e) {
         console.error('Firebase sync failed:', e);
         if (indicator) { indicator.textContent = '❌ 同步失败'; indicator.style.color = '#c0392b'; }
@@ -3063,6 +3128,10 @@
       if (password === expected) {
         adminLoggedIn = true;
         document.getElementById('loginOverlay').style.display = 'none';
+        // Auto-sync from Firebase on login to ensure cross-device consistency
+        if (firebaseReady) {
+          await syncFromFirebase();
+        }
         refreshDashboard();
       } else {
         document.getElementById('loginError').textContent = '密码错误';
@@ -3655,6 +3724,7 @@
       m.deleted_at = new Date().toISOString();
       m.updated_at = new Date().toISOString();
       await dbPut('members', m);
+      if (firebaseReady) await firestoreWriteMember(m);
       await logAction('删除会员：' + fullName(m));
       closeModal('deleteMemberConfirmModal');
       showToast('会员已删除', 'success');
@@ -3762,40 +3832,46 @@
     async function doRestoreDeleted(id) {
       try {
         var m = await dbGet('members', id);
-        if (!m) { showToast('\u4F1A\u5458\u4E0D\u5B58\u5728', 'error'); return; }
-        showConfirm('\u6062\u590D\u4F1A\u5458', '\u786E\u5B9A\u6062\u590D ' + fullName(m) + ' \u7684\u4F1A\u5458\u8EAB\u4EFD\u5417\uFF1F', '\u267B\uFE0F', async function() {
+        if (!m) { showToast('会员不存在', 'error'); return; }
+        showConfirm('恢复会员', '确定恢复 ' + fullName(m) + ' 的会员身份吗？', '♻️', async function() {
           m.status = 'active';
           delete m.deleted_at;
           m.updated_at = new Date().toISOString();
           await dbPut('members', m);
-          await logAction('\u6062\u590D\u5DF2\u5220\u9664\u4F1A\u5458\uFF1A' + fullName(m));
-          showToast('\u5DF2\u6062\u590D ' + fullName(m), 'success');
+          if (firebaseReady) await firestoreWriteMember(m);
+          await logAction('恢复已删除会员：' + fullName(m));
+          showToast('已恢复 ' + fullName(m), 'success');
           renderDeletedMembers();
           refreshDashboard();
         });
       } catch (e) {
-        showToast('\u64CD\u4F5C\u5931\u8D25: ' + e.message, 'error');
+        showToast('操作失败: ' + e.message, 'error');
       }
     }
 
     async function doPermDelete(id) {
       try {
         var m = await dbGet('members', id);
-        if (!m) { showToast('\u4F1A\u5458\u4E0D\u5B58\u5728', 'error'); return; }
-        showConfirm('\u5F7B\u5E95\u5220\u9664', '\u786E\u5B9A\u5F7B\u5E95\u5220\u9664 ' + fullName(m) + ' \u7684\u8BB0\u5F55\u5417\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u64A4\u9500\u3002', '\u26A0\uFE0F', async function() {
+        if (!m) { showToast('会员不存在', 'error'); return; }
+        showConfirm('彻底删除', '确定彻底删除 ' + fullName(m) + ' 的记录吗？此操作不可撤销。', '⚠️', async function() {
+          // Mark as deleted in Firestore first so other devices know
+          m.status = 'deleted';
+          m.deleted_at = new Date().toISOString();
+          m.updated_at = new Date().toISOString();
+          if (firebaseReady) await firestoreWriteMember(m);
           await dbDelete('members', id);
           var reminders = await dbGetAll('reminders');
           var toRemove = reminders.filter(function(r) { return r.memberDbId === id; });
           for (var i = 0; i < toRemove.length; i++) {
             await dbDelete('reminders', toRemove[i].id);
           }
-          await logAction('\u5F7B\u5E95\u5220\u9664\u4F1A\u5458\uFF1A' + fullName(m));
-          showToast('\u5DF2\u5F7B\u5E95\u5220\u9664 ' + fullName(m), 'info');
+          await logAction('彻底删除会员：' + fullName(m));
+          showToast('已彻底删除 ' + fullName(m), 'info');
           renderDeletedMembers();
           refreshDashboard();
         });
       } catch (e) {
-        showToast('\u64CD\u4F5C\u5931\u8D25: ' + e.message, 'error');
+        showToast('操作失败: ' + e.message, 'error');
       }
     }
 
@@ -4046,7 +4122,7 @@
 
       // Generate license reminders now that member is approved
       await generateReminders(m.id, m.member_id);
-      if (firebaseReady) firestoreUpdateStatus(m.member_id, 'approved');
+      if (firebaseReady) await firestoreWriteMember(m);
 
       closeModal('approvalModal');
       await logAction('批准入会：' + fullName(m));
@@ -4073,7 +4149,7 @@
         m.updated_at = new Date().toISOString();
         await dbPut('members', m);
         await logAction('拒绝入会申请：' + fullName(m));
-        if (firebaseReady) firestoreUpdateStatus(m.member_id, 'rejected');
+        if (firebaseReady) await firestoreWriteMember(m);
         showToast('已拒绝 ' + fullName(m) + ' 的入会申请', 'info');
         renderApprovals();
 
@@ -4744,98 +4820,7 @@
         } catch(e) { console.error('[CLEANUP] Error:', e); }
       }
 
-      // === AUTO-TEST: Add test member data (one-time) ===
-      if (!localStorage.getItem('testMemberV7')) {
-        localStorage.setItem('testMemberV7', '1');
-        try {
-          var _t = new Date();
-          var _today = _t.getFullYear() + '-' + String(_t.getMonth()+1).padStart(2,'0') + '-' + String(_t.getDate()).padStart(2,'0');
-
-          // --- Pending members (for approval testing) ---
-          var _m1 = {
-            member_id: 'CHSSA-2026-001', last_name: '\u5F20', first_name: '\u4F1F', name: '\u5F20\u4F1F',
-            gender: '\u7537', nationality: '\u4E2D\u56FD', identity: '\u5C45\u6C11',
-            document_number: '110101199001011234', phone: '+86-138-0013-8000', email: 'zhangwei@example.com',
-            hunting_license_number: 'HL-2026-00123', hunting_license_issue_date: '2024-03-15',
-            non_restricted_license_number: 'PAL-NR-2024-5678', non_restricted_license_issue_date: '2024-03-15',
-            restricted_license_number: '', restricted_license_issue_date: '',
-            photo: '', status: 'pending', created_at: new Date().toISOString(), updated_at: new Date().toISOString()
-          };
-          await dbAdd('members', _m1);
-
-          var _m2 = {
-            member_id: 'CHSSA-2026-002', last_name: '\u674E', first_name: '\u660E', name: '\u674E\u660E',
-            gender: '\u5973', nationality: '\u52A0\u62FF\u5927', identity: '\u516C\u6C11',
-            document_number: 'AB1234567', phone: '+1-416-555-0199', email: 'liming@example.com',
-            hunting_license_number: '', hunting_license_issue_date: '',
-            non_restricted_license_number: 'PAL-NR-2025-9012', non_restricted_license_issue_date: '2025-06-01',
-            restricted_license_number: '', restricted_license_issue_date: '',
-            photo: '', status: 'pending', created_at: new Date().toISOString(), updated_at: new Date().toISOString()
-          };
-          await dbAdd('members', _m2);
-
-          // --- Active members with various license dates for reminder testing ---
-          var _activeMembers = [
-            {
-              member_id: 'CHSSA-2020-001', last_name: '\u738B', first_name: '\u5F3A', name: '\u738B\u5F3A',
-              gender: '\u7537', nationality: '\u4E2D\u56FD', identity: '\u5C45\u6C11',
-              document_number: '210101198505051234', phone: '+1-604-555-0101', email: 'wangqiang@example.com',
-              hunting_license_number: 'HL-2020-00456', hunting_license_issue_date: '2020-03-15',
-              non_restricted_license_number: 'PAL-NR-2020-1234', non_restricted_license_issue_date: '2020-03-15',
-              restricted_license_number: '', restricted_license_issue_date: '',
-              photo: '', status: 'active', join_date: '2020-03-15', renewal_date: '2020-03-15',
-              created_at: '2020-03-15T00:00:00.000Z', updated_at: '2020-03-15T00:00:00.000Z'
-            },
-            {
-              member_id: 'CHSSA-2021-001', last_name: '\u5218', first_name: '\u6D0B', name: '\u5218\u6D0B',
-              gender: '\u7537', nationality: '\u52A0\u62FF\u5927', identity: 'PR',
-              document_number: 'ON9876543', phone: '+1-416-555-0202', email: 'liuyang@example.com',
-              hunting_license_number: 'HL-2021-00789', hunting_license_issue_date: '2021-06-01',
-              non_restricted_license_number: 'PAL-NR-2021-5678', non_restricted_license_issue_date: '2021-06-01',
-              restricted_license_number: 'PAL-R-2021-0099', restricted_license_issue_date: '2021-06-01',
-              photo: '', status: 'active', join_date: '2021-06-01', renewal_date: '2021-06-01',
-              created_at: '2021-06-01T00:00:00.000Z', updated_at: '2021-06-01T00:00:00.000Z'
-            },
-            {
-              member_id: 'CHSSA-2022-001', last_name: '\u9648', first_name: '\u9759', name: '\u9648\u9759',
-              gender: '\u5973', nationality: '\u4E2D\u56FD', identity: '\u5C45\u6C11',
-              document_number: '320101199208082345', phone: '+1-778-555-0303', email: 'chenjing@example.com',
-              hunting_license_number: '', hunting_license_issue_date: '',
-              non_restricted_license_number: 'PAL-NR-2022-9012', non_restricted_license_issue_date: '2022-01-10',
-              restricted_license_number: '', restricted_license_issue_date: '',
-              photo: '', status: 'active', join_date: '2022-01-10', renewal_date: '2022-01-10',
-              created_at: '2022-01-10T00:00:00.000Z', updated_at: '2022-01-10T00:00:00.000Z'
-            },
-            {
-              member_id: 'CHSSA-2023-001', last_name: 'Smith', first_name: 'John', name: 'SmithJohn',
-              gender: '\u7537', nationality: '\u52A0\u62FF\u5927', identity: '\u516C\u6C11',
-              document_number: 'BC5432109', phone: '+1-250-555-0404', email: 'john.smith@example.com',
-              hunting_license_number: 'HL-2023-00321', hunting_license_issue_date: '2023-09-20',
-              non_restricted_license_number: 'PAL-NR-2023-3456', non_restricted_license_issue_date: '2023-09-20',
-              restricted_license_number: 'PAL-R-2023-0077', restricted_license_issue_date: '2023-09-20',
-              photo: '', status: 'active', join_date: '2023-09-20', renewal_date: '2023-09-20',
-              created_at: '2023-09-20T00:00:00.000Z', updated_at: '2023-09-20T00:00:00.000Z'
-            },
-            {
-              member_id: 'CHSSA-2024-001', last_name: '\u8D75', first_name: '\u6587', name: '\u8D75\u6587',
-              gender: '\u7537', nationality: '\u4E2D\u56FD', identity: 'PR',
-              document_number: '130101198812121234', phone: '+1-514-555-0505', email: 'zhaowen@example.com',
-              hunting_license_number: 'HL-2024-00654', hunting_license_issue_date: '2024-11-05',
-              non_restricted_license_number: 'PAL-NR-2024-7890', non_restricted_license_issue_date: '2024-11-05',
-              restricted_license_number: '', restricted_license_issue_date: '',
-              photo: '', status: 'active', join_date: '2024-11-05', renewal_date: '2024-11-05',
-              created_at: '2024-11-05T00:00:00.000Z', updated_at: '2024-11-05T00:00:00.000Z'
-            }
-          ];
-
-          for (var _am of _activeMembers) {
-            var _dbId = await dbAdd('members', _am);
-            await generateReminders(_dbId, _am.member_id);
-          }
-
-          console.log('[TEST] 7 test members added (2 pending + 5 active)');
-        } catch(e) { console.error('[TEST] Error:', e); }
-      }
+      // (Auto-test data removed - production mode)
       // Inject SVG logo into all logo containers
       const logoContainers = ['landingLogo', 'regLogo', 'regLogoEn', 'regLogoFr', 'sidebarLogo', 'loginLogo'];
       logoContainers.forEach(id => {
