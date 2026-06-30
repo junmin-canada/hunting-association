@@ -2022,6 +2022,7 @@
     try {
       firebase.initializeApp(firebaseConfig);
       firestoreDb = firebase.firestore();
+      firestoreDb.settings({ experimentalAutoDetectLongPolling: true });
       firebaseReady = firebaseConfig.apiKey !== "YOUR_API_KEY";
       if (firebaseReady) console.log('Firebase initialized successfully');
       else console.log('Firebase: using placeholder config, cloud sync disabled');
