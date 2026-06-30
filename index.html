@@ -949,7 +949,7 @@
           <div class="checkmark">📨</div>
           <h2 style="color: var(--primary); margin: 16px 0 8px;">欢迎加入，已提交至系统！</h2>
           <p style="color: var(--text-light); font-size: 15px;">您的登记信息已提交，等待管理员审批</p>
-          <p style="color: #999; font-size: 13px; margin-top: 8px;">审批通过后会员资格将正式生效</p>
+          <p id="syncStatusZh" style="font-size: 13px; margin-top: 8px; padding: 8px 16px; border-radius: 8px;"></p>
           <button class="submit-btn" style="margin-top: 24px; max-width: 200px;" onclick="resetForm()">继续登记</button>
           <br>
           <button class="btn btn-outline" style="margin-top: 12px;" onclick="goHome()">返回首页</button>
@@ -1095,7 +1095,7 @@
           <div class="checkmark">📨</div>
           <h2 style="color: var(--primary); margin: 16px 0 8px;">Welcome! Submitted Successfully!</h2>
           <p style="color: var(--text-light); font-size: 15px;">Your registration has been submitted and is pending admin approval.</p>
-          <p style="color: #999; font-size: 13px; margin-top: 8px;">Your membership will be activated after approval.</p>
+          <p id="syncStatusEn" style="font-size: 13px; margin-top: 8px; padding: 8px 16px; border-radius: 8px;"></p>
           <button class="submit-btn" style="margin-top: 24px; max-width: 200px;" onclick="resetFormEn()">Register Another</button>
           <br>
           <button class="btn btn-outline" style="margin-top: 12px;" onclick="goHome()">Back to Home</button>
@@ -1241,7 +1241,7 @@
           <div class="checkmark">&#10004;</div>
           <h2 style="color: var(--primary); margin: 16px 0 8px;">Bienvenue! Soumis avec succès!</h2>
           <p style="color: var(--text-light); font-size: 15px;">Votre inscription a été soumise et est en attente d'approbation.</p>
-          <p style="color: #999; font-size: 13px; margin-top: 8px;">Votre adhésion sera activée après approbation.</p>
+          <p id="syncStatusFr" style="font-size: 13px; margin-top: 8px; padding: 8px 16px; border-radius: 8px;"></p>
           <button class="submit-btn" style="margin-top: 24px; max-width: 200px;" onclick="resetFormFr()">Nouvelle inscription</button>
           <br>
           <button class="btn btn-outline" style="margin-top: 12px;" onclick="goHome()">Retour</button>
@@ -2661,15 +2661,14 @@
       try {
         const members = await dbGetAll('members');
         const existing = members.find(m => m.member_id === data.member_id);
+        var syncResult = 'none';
 
         if (existing) {
           // Update existing member info (keep their status)
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
           if (firebaseReady) {
-            var synced = await firestoreAddRegistration(existing);
-            if (synced) showToast('提交成功，已同步到云端', 'success');
-            else showToast('本地保存成功，但云端同步失败，请稍后重试', 'error');
+            syncResult = await firestoreAddRegistration(existing) ? 'ok' : 'fail';
           }
         } else {
           // New registration: set as pending approval
@@ -2678,9 +2677,24 @@
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
           if (firebaseReady) {
-            var synced = await firestoreAddRegistration(data);
-            if (synced) showToast('提交成功，已同步到云端', 'success');
-            else showToast('本地保存成功，但云端同步失败，请稍后重试', 'error');
+            syncResult = await firestoreAddRegistration(data) ? 'ok' : 'fail';
+          }
+        }
+
+        var statusEl = document.getElementById('syncStatusZh');
+        if (statusEl) {
+          if (syncResult === 'ok') {
+            statusEl.textContent = '☁️ 云端同步成功，管理员将很快收到您的信息';
+            statusEl.style.color = '#27ae60';
+            statusEl.style.background = '#eafaf1';
+          } else if (syncResult === 'fail') {
+            statusEl.textContent = '⚠️ 云端同步失败，管理员可能无法收到，请联系管理员';
+            statusEl.style.color = '#c0392b';
+            statusEl.style.background = '#fdecea';
+          } else {
+            statusEl.textContent = '📱 本地保存成功（离线模式）';
+            statusEl.style.color = '#e67e22';
+            statusEl.style.background = '#fef9e7';
           }
         }
 
@@ -2743,14 +2757,13 @@
       try {
         const members = await dbGetAll('members');
         const existing = members.find(m => m.member_id === data.member_id);
+        var syncResult = 'none';
 
         if (existing) {
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
           if (firebaseReady) {
-            var synced = await firestoreAddRegistration(existing);
-            if (synced) showToast('Submitted and synced to cloud', 'success');
-            else showToast('Saved locally but cloud sync failed, please retry later', 'error');
+            syncResult = await firestoreAddRegistration(existing) ? 'ok' : 'fail';
           }
         } else {
           data.status = 'pending';
@@ -2758,9 +2771,24 @@
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
           if (firebaseReady) {
-            var synced = await firestoreAddRegistration(data);
-            if (synced) showToast('Submitted and synced to cloud', 'success');
-            else showToast('Saved locally but cloud sync failed, please retry later', 'error');
+            syncResult = await firestoreAddRegistration(data) ? 'ok' : 'fail';
+          }
+        }
+
+        var statusEl = document.getElementById('syncStatusEn');
+        if (statusEl) {
+          if (syncResult === 'ok') {
+            statusEl.textContent = '☁️ Cloud sync successful, admin will receive your info shortly';
+            statusEl.style.color = '#27ae60';
+            statusEl.style.background = '#eafaf1';
+          } else if (syncResult === 'fail') {
+            statusEl.textContent = '⚠️ Cloud sync failed, admin may not receive your info. Please contact admin.';
+            statusEl.style.color = '#c0392b';
+            statusEl.style.background = '#fdecea';
+          } else {
+            statusEl.textContent = '📱 Saved locally (offline mode)';
+            statusEl.style.color = '#e67e22';
+            statusEl.style.background = '#fef9e7';
           }
         }
 
@@ -2851,14 +2879,13 @@
       try {
         const members = await dbGetAll('members');
         const existing = members.find(m => m.member_id === data.member_id);
+        var syncResult = 'none';
 
         if (existing) {
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
           if (firebaseReady) {
-            var synced = await firestoreAddRegistration(existing);
-            if (synced) showToast('Soumis et synchronise avec le cloud', 'success');
-            else showToast('Sauvegarde locale reussie mais echec de sync cloud, reessayez', 'error');
+            syncResult = await firestoreAddRegistration(existing) ? 'ok' : 'fail';
           }
         } else {
           data.status = 'pending';
@@ -2866,9 +2893,24 @@
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
           if (firebaseReady) {
-            var synced = await firestoreAddRegistration(data);
-            if (synced) showToast('Soumis et synchronise avec le cloud', 'success');
-            else showToast('Sauvegarde locale reussie mais echec de sync cloud, reessayez', 'error');
+            syncResult = await firestoreAddRegistration(data) ? 'ok' : 'fail';
+          }
+        }
+
+        var statusEl = document.getElementById('syncStatusFr');
+        if (statusEl) {
+          if (syncResult === 'ok') {
+            statusEl.textContent = '☁️ Sync cloud reussie, l\u0027administrateur recevra vos infos bientot';
+            statusEl.style.color = '#27ae60';
+            statusEl.style.background = '#eafaf1';
+          } else if (syncResult === 'fail') {
+            statusEl.textContent = '⚠️ Echec sync cloud, l\u0027admin peut ne pas recevoir vos infos';
+            statusEl.style.color = '#c0392b';
+            statusEl.style.background = '#fdecea';
+          } else {
+            statusEl.textContent = '📱 Sauvegarde locale (mode hors-ligne)';
+            statusEl.style.color = '#e67e22';
+            statusEl.style.background = '#fef9e7';
           }
         }
 
