@@ -2022,7 +2022,7 @@
     try {
       firebase.initializeApp(firebaseConfig);
       firestoreDb = firebase.firestore();
-      firestoreDb.settings({ experimentalForceLongPolling: true });
+      firestoreDb.settings({ experimentalAutoDetectLongPolling: true });
       firebaseReady = firebaseConfig.apiKey !== "YOUR_API_KEY";
       if (firebaseReady) console.log('Firebase initialized successfully');
       else console.log('Firebase: using placeholder config, cloud sync disabled');
@@ -2171,42 +2171,36 @@
       if (!firebaseReady || !firestoreDb) return 0;
       var indicator = document.getElementById('syncIndicator');
       if (indicator) { indicator.textContent = '🔄 同步中...'; indicator.style.color = '#e67e22'; }
-      try {
-        // Fetch ALL documents from Firestore (not just pending)
-        var snapshot = await firestoreTimeout(firestoreDb.collection('registrations').get(), 15000);
+
+      // Helper: process an array of member data objects and merge into local DB
+      async function processSyncDocs(docsArray) {
         var allMembers = await dbGetAll('members');
         var localMap = {};
         allMembers.forEach(function(m) { localMap[m.member_id] = m; });
         var newCount = 0;
         var updatedCount = 0;
-        var docs = [];
-        snapshot.forEach(function(doc) { docs.push(doc); });
         var firebaseIds = {};
 
-        // Process all Firestore documents
-        for (var i = 0; i < docs.length; i++) {
-          var data = docs[i].data();
+        for (var i = 0; i < docsArray.length; i++) {
+          var data = docsArray[i];
+          if (!data.member_id) continue;
           firebaseIds[data.member_id] = true;
           var existing = localMap[data.member_id];
 
           if (!existing) {
-            // New member from Firestore - add to local DB
-            data.id = undefined; // Let IndexedDB assign ID
-            data.created_at = data.submittedAt ? data.submittedAt.toDate().toISOString() : (data.created_at || new Date().toISOString());
-            data.updated_at = data.updatedAt ? data.updatedAt.toDate().toISOString() : (data.updated_at || new Date().toISOString());
+            data.id = undefined;
+            data.created_at = data.created_at || new Date().toISOString();
+            data.updated_at = data.updated_at || new Date().toISOString();
             await dbAdd('members', data);
             newCount++;
           } else {
-            // Existing member - compare timestamps and update if Firestore has newer data
             var localTime = existing.updated_at || existing.created_at || '';
-            var firebaseTime = data.updatedAt ? data.updatedAt.toDate().toISOString() : (data.updated_at || '');
+            var firebaseTime = data.updated_at || '';
             if (firebaseTime > localTime) {
-              // Firestore has newer data - update local
               var keys = Object.keys(data);
               for (var k = 0; k < keys.length; k++) {
                 var key = keys[k];
-                if (key === 'submittedAt' || key === 'updatedAt') continue;
-                if (key === 'id') continue;
+                if (key === 'submittedAt' || key === 'updatedAt' || key === 'id') continue;
                 if (data[key] !== undefined && data[key] !== '') {
                   existing[key] = data[key];
                 }
@@ -2226,13 +2220,73 @@
           }
         }
 
-        var totalChanges = newCount + updatedCount;
+        return { newCount: newCount, updatedCount: updatedCount };
+      }
+
+      // Helper: parse REST API document into flat object
+      function parseRestDoc(doc) {
+        var fields = doc.fields || {};
+        var result = {};
+        var keys = Object.keys(fields);
+        for (var i = 0; i < keys.length; i++) {
+          var f = fields[keys[i]];
+          if (f.stringValue !== undefined) result[keys[i]] = f.stringValue;
+          else if (f.timestampValue !== undefined) result[keys[i]] = f.timestampValue;
+          else if (f.integerValue !== undefined) result[keys[i]] = parseInt(f.integerValue);
+          else if (f.booleanValue !== undefined) result[keys[i]] = f.booleanValue;
+        }
+        return result;
+      }
+
+      var docsData = [];
+      var usedRest = false;
+
+      // Try SDK first
+      try {
+        var snapshot = await firestoreTimeout(firestoreDb.collection('registrations').get(), 15000);
+        snapshot.forEach(function(doc) {
+          var d = doc.data();
+          // Convert Firestore Timestamps to ISO strings
+          if (d.submittedAt && d.submittedAt.toDate) d.submittedAtStr = d.submittedAt.toDate().toISOString();
+          if (d.updatedAt && d.updatedAt.toDate) d.updatedAtStr = d.updatedAt.toDate().toISOString();
+          // Use server timestamps if local ones are missing
+          if (!d.created_at && d.submittedAtStr) d.created_at = d.submittedAtStr;
+          if (!d.updated_at && d.updatedAtStr) d.updated_at = d.updatedAtStr;
+          docsData.push(d);
+        });
+      } catch(sdkErr) {
+        console.warn('SDK sync failed, trying REST API:', sdkErr.message);
+        // Fallback: REST API
+        try {
+          var resp = await fetch('https://firestore.googleapis.com/v1/projects/shouliexiehui/databases/(default)/documents/registrations');
+          if (resp.ok) {
+            var json = await resp.json();
+            var restDocs = json.documents || [];
+            for (var r = 0; r < restDocs.length; r++) {
+              docsData.push(parseRestDoc(restDocs[r]));
+            }
+            usedRest = true;
+          } else {
+            throw new Error('REST ' + resp.status);
+          }
+        } catch(restErr) {
+          console.error('REST sync also failed:', restErr.message);
+          if (indicator) { indicator.textContent = '❌ 同步失败'; indicator.style.color = '#c0392b'; }
+          return 0;
+        }
+      }
+
+      // Process all documents
+      try {
+        var result = await processSyncDocs(docsData);
+        var totalChanges = result.newCount + result.updatedCount;
         if (indicator) {
+          var src = usedRest ? '(REST)' : '';
           if (totalChanges > 0) {
-            indicator.textContent = '✅ 同步成功，新增 ' + newCount + ' 条，更新 ' + updatedCount + ' 条';
+            indicator.textContent = '✅ 同步成功' + src + '，新增 ' + result.newCount + ' 条，更新 ' + result.updatedCount + ' 条';
             indicator.style.color = '#27ae60';
           } else {
-            indicator.textContent = '✅ 已是最新';
+            indicator.textContent = '✅ 已是最新' + src;
             indicator.style.color = '#999';
           }
         }
@@ -2243,9 +2297,9 @@
           refreshDashboard();
         }
         return totalChanges;
-      } catch(e) {
-        console.error('Firebase sync failed:', e);
-        if (indicator) { indicator.textContent = '❌ 同步失败'; indicator.style.color = '#c0392b'; }
+      } catch(procErr) {
+        console.error('Sync processing failed:', procErr);
+        if (indicator) { indicator.textContent = '❌ 同步处理失败'; indicator.style.color = '#c0392b'; }
         return 0;
       }
     }
