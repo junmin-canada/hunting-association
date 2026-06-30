@@ -2022,7 +2022,7 @@
     try {
       firebase.initializeApp(firebaseConfig);
       firestoreDb = firebase.firestore();
-      firestoreDb.settings({ experimentalAutoDetectLongPolling: true });
+      firestoreDb.settings({ experimentalForceLongPolling: true });
       firebaseReady = firebaseConfig.apiKey !== "YOUR_API_KEY";
       if (firebaseReady) console.log('Firebase initialized successfully');
       else console.log('Firebase: using placeholder config, cloud sync disabled');
@@ -2039,7 +2039,7 @@
     async function firestoreAddRegistration(data) {
       if (!firebaseReady || !firestoreDb) return false;
       try {
-        await firestoreDb.collection('registrations').doc(data.member_id).set({
+        await firestoreTimeout(firestoreDb.collection('registrations').doc(data.member_id).set({
           member_id: data.member_id,
           name: data.name || '',
           last_name: data.last_name || '',
@@ -2059,7 +2059,7 @@
           restricted_license_issue_date: data.restricted_license_issue_date || '',
           status: 'pending',
           submittedAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        }), 30000);
         console.log('Registration synced to Firebase:', data.member_id);
         return true;
       } catch(e) {
