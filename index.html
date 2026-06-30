@@ -2038,7 +2038,7 @@
     async function firestoreAddRegistration(data) {
       if (!firebaseReady || !firestoreDb) return;
       try {
-        await firestoreTimeout(firestoreDb.collection('registrations').doc(data.member_id).set({
+        await firestoreDb.collection('registrations').doc(data.member_id).set({
           member_id: data.member_id,
           name: data.name || '',
           last_name: data.last_name || '',
@@ -2058,10 +2058,10 @@
           restricted_license_issue_date: data.restricted_license_issue_date || '',
           status: 'pending',
           submittedAt: firebase.firestore.FieldValue.serverTimestamp()
-        }));
+        });
         console.log('Registration synced to Firebase:', data.member_id);
       } catch(e) {
-        console.warn('Firebase write skipped (timeout or error):', e.message);
+        console.error('Firebase write FAILED:', e.code, e.message, e);
       }
     }
 
