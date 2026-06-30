@@ -2664,14 +2664,14 @@
           // Update existing member info (keep their status)
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
-          if (firebaseReady) firestoreAddRegistration(existing);
+          if (firebaseReady) await firestoreAddRegistration(existing);
         } else {
           // New registration: set as pending approval
           data.status = 'pending';
           data.created_at = new Date().toISOString();
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
-          if (firebaseReady) firestoreAddRegistration(data);
+          if (firebaseReady) await firestoreAddRegistration(data);
         }
 
         form.style.display = 'none';
@@ -2737,13 +2737,13 @@
         if (existing) {
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
-          if (firebaseReady) firestoreAddRegistration(existing);
+          if (firebaseReady) await firestoreAddRegistration(existing);
         } else {
           data.status = 'pending';
           data.created_at = new Date().toISOString();
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
-          if (firebaseReady) firestoreAddRegistration(data);
+          if (firebaseReady) await firestoreAddRegistration(data);
         }
 
         form.style.display = 'none';
@@ -2837,13 +2837,13 @@
         if (existing) {
           Object.assign(existing, data, { updated_at: new Date().toISOString() });
           await dbPut('members', existing);
-          if (firebaseReady) firestoreAddRegistration(existing);
+          if (firebaseReady) await firestoreAddRegistration(existing);
         } else {
           data.status = 'pending';
           data.created_at = new Date().toISOString();
           data.updated_at = new Date().toISOString();
           await dbAdd('members', data);
-          if (firebaseReady) firestoreAddRegistration(data);
+          if (firebaseReady) await firestoreAddRegistration(data);
         }
 
         form.style.display = 'none';
