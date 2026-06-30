@@ -2241,36 +2241,35 @@
       var docsData = [];
       var usedRest = false;
 
-      // Try SDK first
+      // Try REST API first (proven reliable, no SDK transport issues)
       try {
-        var snapshot = await firestoreTimeout(firestoreDb.collection('registrations').get(), 15000);
-        snapshot.forEach(function(doc) {
-          var d = doc.data();
-          // Convert Firestore Timestamps to ISO strings
-          if (d.submittedAt && d.submittedAt.toDate) d.submittedAtStr = d.submittedAt.toDate().toISOString();
-          if (d.updatedAt && d.updatedAt.toDate) d.updatedAtStr = d.updatedAt.toDate().toISOString();
-          // Use server timestamps if local ones are missing
-          if (!d.created_at && d.submittedAtStr) d.created_at = d.submittedAtStr;
-          if (!d.updated_at && d.updatedAtStr) d.updated_at = d.updatedAtStr;
-          docsData.push(d);
-        });
-      } catch(sdkErr) {
-        console.warn('SDK sync failed, trying REST API:', sdkErr.message);
-        // Fallback: REST API
-        try {
-          var resp = await fetch('https://firestore.googleapis.com/v1/projects/shouliexiehui/databases/(default)/documents/registrations');
-          if (resp.ok) {
-            var json = await resp.json();
-            var restDocs = json.documents || [];
-            for (var r = 0; r < restDocs.length; r++) {
-              docsData.push(parseRestDoc(restDocs[r]));
-            }
-            usedRest = true;
-          } else {
-            throw new Error('REST ' + resp.status);
+        var resp = await fetch('https://firestore.googleapis.com/v1/projects/shouliexiehui/databases/(default)/documents/registrations');
+        if (resp.ok) {
+          var json = await resp.json();
+          var restDocs = json.documents || [];
+          for (var r = 0; r < restDocs.length; r++) {
+            docsData.push(parseRestDoc(restDocs[r]));
           }
-        } catch(restErr) {
-          console.error('REST sync also failed:', restErr.message);
+          usedRest = true;
+          console.log('REST API sync: fetched', restDocs.length, 'documents');
+        } else {
+          throw new Error('REST ' + resp.status);
+        }
+      } catch(restErr) {
+        console.warn('REST sync failed, trying SDK:', restErr.message);
+        // Fallback: SDK
+        try {
+          var snapshot = await firestoreTimeout(firestoreDb.collection('registrations').get(), 15000);
+          snapshot.forEach(function(doc) {
+            var d = doc.data();
+            if (d.submittedAt && d.submittedAt.toDate) d.submittedAtStr = d.submittedAt.toDate().toISOString();
+            if (d.updatedAt && d.updatedAt.toDate) d.updatedAtStr = d.updatedAt.toDate().toISOString();
+            if (!d.created_at && d.submittedAtStr) d.created_at = d.submittedAtStr;
+            if (!d.updated_at && d.updatedAtStr) d.updated_at = d.updatedAtStr;
+            docsData.push(d);
+          });
+        } catch(sdkErr) {
+          console.error('SDK sync also failed:', sdkErr.message);
           if (indicator) { indicator.textContent = '❌ 同步失败'; indicator.style.color = '#c0392b'; }
           return 0;
         }
